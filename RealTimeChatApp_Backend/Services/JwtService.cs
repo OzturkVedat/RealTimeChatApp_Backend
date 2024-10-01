@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using MongoDB.Driver;
 using RealTimeChatApp.API.DTOs;
 using RealTimeChatApp.API.Models;
 using System.Globalization;
@@ -13,7 +14,7 @@ namespace RealTimeChatApp.API.Services
     {
         ResultModel GenerateJwtToken(IEnumerable<Claim> claims);
         Task<ResultModel> GenerateRefreshToken(string userId);
-        Task<ResultModel> ValidateRefreshTokenAsync(string refreshToken);
+        Task<ResultModel> ValidateRefreshToken(string userId, string refreshToken);
         Task<ResultModel> RevokeRefreshToken(string userId);
     }
 
@@ -21,10 +22,12 @@ namespace RealTimeChatApp.API.Services
     {
         private readonly IConfiguration _configuration;
         private readonly UserManager<ApplicationUser> _userManager;
-        public JwtService(IConfiguration configuration, UserManager<ApplicationUser> userManager )
+        private readonly IMongoCollection<ApplicationUser> _usersCollection;
+        public JwtService(IConfiguration configuration, UserManager<ApplicationUser> userManager, IMongoDatabase database)
         {
             _configuration = configuration;
             _userManager = userManager;
+            _usersCollection = database.GetCollection<ApplicationUser>("users");
         }
 
         public ResultModel GenerateJwtToken(IEnumerable<Claim> claims)
@@ -42,69 +45,50 @@ namespace RealTimeChatApp.API.Services
         }
         public async Task<ResultModel> GenerateRefreshToken(string userId)
         {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-                return new ErrorResult("Failed to generate refresh token: User not found.");
-            
-
-            string refreshToken = Guid.NewGuid().ToString();
-            DateTime expiryDate = DateTime.UtcNow.AddDays(7);
-
-            string tokenWithExpiry = refreshToken + "." + expiryDate.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            var result = await _userManager.SetAuthenticationTokenAsync(user, "ChatApp", "RefreshToken", tokenWithExpiry);
-            if (result.Succeeded)
+            var newToken = Guid.NewGuid().ToString(); // Generate a new refresh token
+            var filter = Builders<ApplicationUser>.Filter.Eq(u => u.Id, userId);
+            var update = Builders<ApplicationUser>.Update.Set(u => u.RefreshToken, new RefreshToken
             {
-                await _userManager.UpdateAsync(user);
-                return new SuccessDataResult<string>("Successfully generated refresh token.", refreshToken);
-            }
-            else
-            {
-                var errorMessages = result.Errors.Select(error => error.Description).ToList();
-                return new ErrorDataResult("Error while generating refresh token. ", errorMessages);
-            }
-        }
-        public async Task<ResultModel> ValidateRefreshTokenAsync(string refreshToken)
-        {
-            var user = await GetUserByRefreshTokenAsync(refreshToken);
-            if (user == null)
-                return new ErrorResult("Error while validating refresh token: User not found");
+                Token = newToken,
+                ExpiryDate = DateTime.UtcNow.AddDays(7),
+                IsRevoked = false
+            });
 
-            var storedTokenWithExpiry = await _userManager.GetAuthenticationTokenAsync(user, "ChatApp", "RefreshToken");
-            if (storedTokenWithExpiry == null)
-                return new ErrorResult("Error while validating refresh token.");
-            
-            string[] tokenParts = storedTokenWithExpiry.Split('.'); // Split the stored token to extract the refresh token and expiry date
-            if (tokenParts.Length != 2)
-                return new ErrorResult("Error while validating refresh token: Invalid token format.");
+            var result = await _usersCollection.UpdateOneAsync(filter, update);
+            if (result.ModifiedCount > 0)
+                return new SuccessDataResult<string>("Successfully generated a new refresh token.", newToken);
 
-
-            string storedToken = tokenParts[0];
-            string expiryDateString = tokenParts[1];
-
-            if (!DateTime.TryParseExact(expiryDateString, "yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime expiryDate))
-                return new ErrorResult("Error while validating refresh token: Invalid token time format.");
-
-
-            if (storedToken == refreshToken && expiryDate > DateTime.UtcNow)
-                return new SuccessResult("Successfully validated.");
-            else
-                return new ErrorResult("Invalid or expired token.");
+            return new ErrorResult("Error while generating the refresh token.");
         }
 
-        private async Task<ApplicationUser> GetUserByRefreshTokenAsync(string refreshToken)
+        public async Task<ResultModel> ValidateRefreshToken(string userId, string refreshToken)
         {
-            throw new NotImplementedException();
-        }
+            var filter = Builders<ApplicationUser>.Filter.And(
+                Builders<ApplicationUser>.Filter.Eq(u => u.Id, userId),
+                Builders<ApplicationUser>.Filter.Eq(u => u.RefreshToken.Token, refreshToken),
+                Builders<ApplicationUser>.Filter.Eq(u => u.RefreshToken.IsRevoked, false),
+                Builders<ApplicationUser>.Filter.Gt(u => u.RefreshToken.ExpiryDate, DateTime.UtcNow)
+            );
 
-        public async Task<ResultModel> RevokeRefreshToken(string userId)     // for log out
-        {
-            var user = await _userManager.FindByIdAsync(userId);
+            var user = await _usersCollection.Find(filter).FirstOrDefaultAsync();
             if (user != null)
             {
-                await _userManager.RemoveAuthenticationTokenAsync(user, "ChatApp", "RefreshToken");
+                return new SuccessResult("Refresh token is valid.");
+            }
+            return new ErrorResult("Invalid or expired refresh token.");
+        }
+        public async Task<ResultModel> RevokeRefreshToken(string userId)     // for log out
+        {
+            var filter = Builders<ApplicationUser>.Filter.Eq(u => u.Id, userId);
+            var update = Builders<ApplicationUser>.Update.Set(u => u.RefreshToken.IsRevoked, true);
+            var result = await _usersCollection.UpdateOneAsync(filter, update);
+
+            if (result.ModifiedCount > 0)
+            {
                 return new SuccessResult("Successfully revoked the requested token.");
             }
             return new ErrorResult("Error while revoking the requested token.");
         }
+
     }
 }

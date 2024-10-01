@@ -6,8 +6,10 @@ using MongoDbGenericRepository.Attributes;
 namespace RealTimeChatApp.API.Models
 {
     [CollectionName("users")]
-    public class ApplicationUser : MongoIdentityUser<Guid>
+    public class ApplicationUser : MongoIdentityUser<string>
     {
         public string FullName { get; set; } = string.Empty;
+        [BsonIgnoreIfNull]
+        public RefreshToken RefreshToken { get; set; }
     }
 }

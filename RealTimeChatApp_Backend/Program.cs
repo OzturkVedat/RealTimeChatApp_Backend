@@ -17,13 +17,12 @@ BsonSerializer.RegisterSerializer(new GuidSerializer(MongoDB.Bson.BsonType.Strin
 BsonSerializer.RegisterSerializer(new DateTimeSerializer(MongoDB.Bson.BsonType.String));
 BsonSerializer.RegisterSerializer(new DateTimeOffsetSerializer(MongoDB.Bson.BsonType.String));
 
+var mongoDbSettings = builder.Configuration.GetSection("MongoDbSettings").Get<MongoDbSettings>();
+
+
 var mongoDbIdentityConfig = new MongoDbIdentityConfiguration
 {
-    MongoDbSettings = new MongoDbSettings
-    {
-        ConnectionString = "some-conn-str",
-        DatabaseName = "chatapp-mongodb"
-    },
+    MongoDbSettings = mongoDbSettings,
     IdentityOptionsAction = options =>
     {
         options.Password.RequireDigit = true;
@@ -38,7 +37,7 @@ var mongoDbIdentityConfig = new MongoDbIdentityConfiguration
 
 builder.Services.ConfigureMongoDbIdentity<ApplicationUser, ApplicationRole, Guid>(mongoDbIdentityConfig)
     .AddUserManager<UserManager<ApplicationUser>>()
-    .AddSignInManager<UserManager<ApplicationUser>>()
+    .AddSignInManager<SignInManager<ApplicationUser>>()
     .AddRoleManager<RoleManager<ApplicationRole>>()
     .AddDefaultTokenProviders();
 
@@ -62,6 +61,9 @@ builder.Services.AddAuthentication(auth =>
         ClockSkew= TimeSpan.Zero
     };
 });
+
+builder.Services.AddScoped<IJwtService, JwtService>();
+
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
