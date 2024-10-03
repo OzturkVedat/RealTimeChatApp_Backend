@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace RealTimeChatApp.API.DTOs
+namespace RealTimeChatApp.API.DTOs.RequestModels
 {
     public class LoginRequest
     {
@@ -14,7 +14,7 @@ namespace RealTimeChatApp.API.DTOs
     }
     public class LoginResponse
     {
-        public Guid UserId { get; set; }
+        public string UserId { get; set; }
         public string AccessToken { get; set; }
         public string RefreshToken { get; set; }
     }

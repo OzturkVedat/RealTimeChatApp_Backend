@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc.ModelBinding;
 
-namespace RealTimeChatApp.API.DTOs
+namespace RealTimeChatApp.API.DTOs.ResultModels
 {
     public class SuccessDataResult<T> : ResultModel
     {

@@ -1,6 +1,6 @@
-﻿namespace RealTimeChatApp.API.DTOs
+﻿namespace RealTimeChatApp.API.DTOs.ResultModels
 {
-    public class ResultModel  
+    public class ResultModel
     {
         public bool IsSuccess { get; set; }
         public string Message { get; set; }

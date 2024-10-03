@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using RealTimeChatApp.API.DTOs;
+using RealTimeChatApp.API.DTOs.RequestModels;
+using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.Services;
 using System.Security.Claims;
@@ -11,12 +12,12 @@ namespace RealTimeChatApp.API.Controllers
     [ApiController]
     public class AccountController : ControllerBase
     {
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly UserManager<UserModel> _userManager;
+        private readonly SignInManager<UserModel> _signInManager;
         private readonly IJwtService _jwtService;
 
-        public AccountController(UserManager<ApplicationUser> userManager,
-                                 SignInManager<ApplicationUser> signInManager,
+        public AccountController(UserManager<UserModel> userManager,
+                                 SignInManager<UserModel> signInManager,
                                  IJwtService jwtService)
         {
             _userManager = userManager;
@@ -34,9 +35,9 @@ namespace RealTimeChatApp.API.Controllers
             if (user != null)
                 return Conflict(new ErrorResult("User is already registered."));
 
-            var newUser = new ApplicationUser
+            var newUser = new UserModel
             {
-                UserName = request.Email,  //  userName is set as email for login purposes
+                UserName = request.Email,  //  username is set as email for login purposes
                 Email = request.Email,
                 FullName = request.FullName
             };

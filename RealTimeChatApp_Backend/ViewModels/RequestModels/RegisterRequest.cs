@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace RealTimeChatApp.API.DTOs
+namespace RealTimeChatApp.API.DTOs.RequestModels
 {
     public class RegisterRequest
     {

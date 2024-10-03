@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
-using RealTimeChatApp.API.DTOs;
+using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Models;
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
@@ -21,13 +21,13 @@ namespace RealTimeChatApp.API.Services
     public class JwtService : IJwtService
     {
         private readonly IConfiguration _configuration;
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly IMongoCollection<ApplicationUser> _usersCollection;
-        public JwtService(IConfiguration configuration, UserManager<ApplicationUser> userManager, IMongoDatabase database)
+        private readonly UserManager<UserModel> _userManager;
+        private readonly IMongoCollection<UserModel> _usersCollection;
+        public JwtService(IConfiguration configuration, UserManager<UserModel> userManager, IMongoDatabase database)
         {
             _configuration = configuration;
             _userManager = userManager;
-            _usersCollection = database.GetCollection<ApplicationUser>("users");
+            _usersCollection = database.GetCollection<UserModel>("users");
         }
 
         public ResultModel GenerateJwtToken(IEnumerable<Claim> claims)
@@ -46,8 +46,8 @@ namespace RealTimeChatApp.API.Services
         public async Task<ResultModel> GenerateRefreshToken(string userId)
         {
             var newToken = Guid.NewGuid().ToString(); // Generate a new refresh token
-            var filter = Builders<ApplicationUser>.Filter.Eq(u => u.Id, userId);
-            var update = Builders<ApplicationUser>.Update.Set(u => u.RefreshToken, new RefreshToken
+            var filter = Builders<UserModel>.Filter.Eq(u => u.Id, userId);
+            var update = Builders<UserModel>.Update.Set(u => u.RefreshToken, new RefreshToken
             {
                 Token = newToken,
                 ExpiryDate = DateTime.UtcNow.AddDays(7),
@@ -63,11 +63,11 @@ namespace RealTimeChatApp.API.Services
 
         public async Task<ResultModel> ValidateRefreshToken(string userId, string refreshToken)
         {
-            var filter = Builders<ApplicationUser>.Filter.And(
-                Builders<ApplicationUser>.Filter.Eq(u => u.Id, userId),
-                Builders<ApplicationUser>.Filter.Eq(u => u.RefreshToken.Token, refreshToken),
-                Builders<ApplicationUser>.Filter.Eq(u => u.RefreshToken.IsRevoked, false),
-                Builders<ApplicationUser>.Filter.Gt(u => u.RefreshToken.ExpiryDate, DateTime.UtcNow)
+            var filter = Builders<UserModel>.Filter.And(
+                Builders<UserModel>.Filter.Eq(u => u.Id, userId),
+                Builders<UserModel>.Filter.Eq(u => u.RefreshToken.Token, refreshToken),
+                Builders<UserModel>.Filter.Eq(u => u.RefreshToken.IsRevoked, false),
+                Builders<UserModel>.Filter.Gt(u => u.RefreshToken.ExpiryDate, DateTime.UtcNow)
             );
 
             var user = await _usersCollection.Find(filter).FirstOrDefaultAsync();
@@ -79,8 +79,8 @@ namespace RealTimeChatApp.API.Services
         }
         public async Task<ResultModel> RevokeRefreshToken(string userId)     // for log out
         {
-            var filter = Builders<ApplicationUser>.Filter.Eq(u => u.Id, userId);
-            var update = Builders<ApplicationUser>.Update.Set(u => u.RefreshToken.IsRevoked, true);
+            var filter = Builders<UserModel>.Filter.Eq(u => u.Id, userId);
+            var update = Builders<UserModel>.Update.Set(u => u.RefreshToken.IsRevoked, true);
             var result = await _usersCollection.UpdateOneAsync(filter, update);
 
             if (result.ModifiedCount > 0)

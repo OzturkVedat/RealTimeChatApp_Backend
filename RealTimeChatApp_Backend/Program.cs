@@ -3,9 +3,12 @@ using AspNetCore.Identity.MongoDbCore.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
+using MongoDB.Driver;
 using RealTimeChatApp.API.Hubs;
+using RealTimeChatApp.API.Middleware;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.Services;
 using System.Text;
@@ -19,6 +22,12 @@ BsonSerializer.RegisterSerializer(new DateTimeOffsetSerializer(MongoDB.Bson.Bson
 
 var mongoDbSettings = builder.Configuration.GetSection("MongoDbSettings").Get<MongoDbSettings>();
 
+builder.Services.AddSingleton<IMongoClient>(new MongoClient(mongoDbSettings.ConnectionString));
+builder.Services.AddScoped<IMongoDatabase>(sp =>
+{
+    var client = sp.GetRequiredService<IMongoClient>();
+    return client.GetDatabase(mongoDbSettings.DatabaseName);
+});
 
 var mongoDbIdentityConfig = new MongoDbIdentityConfiguration
 {
@@ -35,10 +44,10 @@ var mongoDbIdentityConfig = new MongoDbIdentityConfiguration
     }
 };
 
-builder.Services.ConfigureMongoDbIdentity<ApplicationUser, ApplicationRole, Guid>(mongoDbIdentityConfig)
-    .AddUserManager<UserManager<ApplicationUser>>()
-    .AddSignInManager<SignInManager<ApplicationUser>>()
-    .AddRoleManager<RoleManager<ApplicationRole>>()
+builder.Services.ConfigureMongoDbIdentity<UserModel, RoleModel, string>(mongoDbIdentityConfig)
+    .AddUserManager<UserManager<UserModel>>()
+    .AddSignInManager<SignInManager<UserModel>>()
+    .AddRoleManager<RoleManager<RoleModel>>()
     .AddDefaultTokenProviders();
 
 builder.Services.AddAuthentication(auth =>
@@ -55,10 +64,10 @@ builder.Services.AddAuthentication(auth =>
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidateLifetime = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
-        ClockSkew= TimeSpan.Zero
+        ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
+        ValidAudience = builder.Configuration["JwtSettings:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:SecretKey"])),
+        ClockSkew = TimeSpan.Zero
     };
 });
 
@@ -68,7 +77,33 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+
+builder.Services.AddSwaggerGen(option =>
+{
+    option.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        In = ParameterLocation.Header,
+        Description = "Please enter a valid token",
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        BearerFormat = "JWT",
+        Scheme = "Bearer"
+    });
+    option.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type=ReferenceType.SecurityScheme,
+                    Id="Bearer"
+                }
+            },
+            new string[]{}
+        }
+    });
+});
 
 builder.Services.AddSignalR();
 builder.Services.AddHostedService<ServerTimeNotifier>();
@@ -85,6 +120,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors(policy => policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
 
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
 
 app.MapHub<ChatHub>("/chat");
