@@ -9,14 +9,16 @@ namespace RealTimeChatApp.API.Hubs
 {
     public sealed class ChatHub : Hub
     {
-        private readonly IMongoCollection<MessageModel> _messagesCollection;
-        private readonly HubHelperService _helperService;
+        private readonly MessageService _messageService;
+        private readonly GroupService _groupService;
+        private readonly UserService _userService;
         private readonly UserManager<UserModel> _userManager;
 
-        public ChatHub(IMongoDatabase mongoDb,HubHelperService helperService, UserManager<UserModel> userManager)
+        public ChatHub(MessageService messageService, GroupService groupService, UserService userService, UserManager<UserModel> userManager)
         {
-            _messagesCollection = mongoDb.GetCollection<MessageModel>("messages");
-            _helperService = helperService;
+            _messageService = messageService;
+            _groupService = groupService;
+            _userService = userService;
             _userManager = userManager;
         }
 
@@ -29,6 +31,50 @@ namespace RealTimeChatApp.API.Hubs
         // Groups.AddToGroupAsync(Context.ConnectionId, "chatRoom1"): Adding a user to a group (e.g., chat room)
         // Groups.RemoveFromGroupAsync(Context.ConnectionId, "chatRoom1"): Removing a user from a group
         // Clients.Group("chatRoom1").SendAsync("ReceiveMessage", "Hello, chatRoom1!"): Send a message to all users in the group "chatRoom1"
+
+        public async Task GetAllGroups()
+        {
+            var userId = Context.UserIdentifier;
+            if (userId == null)
+            {
+                await Clients.Caller.SendAsync("ReceiveMessage", "System", "You are not authenticated.");
+                return;
+            }
+
+            var groups = await _userService.GetUserJoinedGroups(userId);
+            await Clients.Caller.SendAsync("ReceiveUserGroups", groups);
+        }
+        public async Task GetGroupMessageHistory(string groupId)
+        {
+            var messages = await _groupService.GetGroupMessageHistory(groupId);
+            await Clients.Caller.SendAsync("ReceiveGroupMessageHistory", messages);
+        }
+
+        public async Task JoinGroup(string groupId)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, groupId);
+            await Clients.Group(groupId).SendAsync("UserJoined", Context.ConnectionId);
+        }
+
+        public async Task LeaveGroup(string groupId)
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupId);
+            await Clients.Group(groupId).SendAsync("UserLeft", Context.ConnectionId);
+        }
+
+
+        public async Task GetPrivateMessageHistory(string recipientUserId)
+        {
+            var senderUser = await _userManager.GetUserAsync(Context.User);
+            if (senderUser == null)
+            {
+                await Clients.Caller.SendAsync("ReceiveMessage", "System", "You are not authenticated.");
+                return;
+            }
+
+            var messages = await _messageService.GetMessageHistory(senderUser.Id, recipientUserId);
+            await Clients.Caller.SendAsync("ReceiveMessageHistory", messages);
+        }
 
         public async Task SendPrivateMessage(string recipentUserId, string messageContent)
         {
@@ -51,7 +97,7 @@ namespace RealTimeChatApp.API.Hubs
                     {recipentUserId, false}
                 }
             };
-            await _messagesCollection.InsertOneAsync(message);
+            await _messageService.SaveMessageAsync(message);
 
             await Clients.User(recipentUserId).SendAsync("ReceiveMessage", senderUser.FullName, message.Content, message.SentAt);
         }
@@ -64,8 +110,8 @@ namespace RealTimeChatApp.API.Hubs
                 await Clients.Caller.SendAsync("ReceiveMessage", "System", "You are not authenticated.");
                 return;
             }
-            
-            var roomUsers = await _helperService.GetUserIdsInGroupAsync(groupId);
+
+            var roomUsers = await _groupService.GetUserIdsInGroupAsync(groupId);
 
             // Create a new message model
             var message = new MessageModel
@@ -77,38 +123,9 @@ namespace RealTimeChatApp.API.Hubs
                 ReadStatus = roomUsers.ToDictionary(userId => userId, userId => false)  // set all to false
             };
 
-            await _messagesCollection.InsertOneAsync(message);
+            await _messageService.SaveMessageAsync(message);
             await Clients.Group(groupId).SendAsync("ReceiveGroupMessage", senderUser.FullName, message.Content, message.SentAt);
         }
-        public async Task JoinChat(string roomId)
-        {
-            await Groups.AddToGroupAsync(Context.ConnectionId, roomId);
-            await Clients.Group(roomId).SendAsync("UserJoined", Context.ConnectionId);
-        }
 
-        public async Task LeaveChat(string roomId)
-        {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId);
-            await Clients.Group(roomId).SendAsync("UserLeft", Context.ConnectionId);
-        }
-
-        public async Task GetMessageHistory(string recipientUserId)
-        {
-            var senderUser = await _userManager.GetUserAsync(Context.User);
-            if (senderUser == null)
-            {
-                return;
-            }
-
-            // Fetch messages where the sender is either the current user or the recipient is in the recipientUserId list
-            var messages = await _messagesCollection
-                .Find(m => m.SenderId == senderUser.Id || m.RecipientIds.Contains(recipientUserId))
-                .SortByDescending(m => m.SentAt)
-                .Limit(50)  // Fetch only the last 50 messages
-                .ToListAsync();
-
-            // Send the message history to the calling user
-            await Clients.Caller.SendAsync("ReceiveMessageHistory", messages);
-        }
     }
 }

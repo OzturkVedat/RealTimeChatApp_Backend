@@ -10,16 +10,14 @@ namespace RealTimeChatApp.API.Hubs
 {
     public sealed class NotificationsHub : Hub
     {
-        private readonly IMongoCollection<NotificationModel> _notificationsCollection;
-        private readonly IMongoCollection<GroupModel> _groupsCollection;
-        private readonly HubHelperService _helperService;
+        private readonly NotificationService _notificationService;
+        private readonly GroupService _groupService;
         private readonly UserManager<UserModel> _userManager;
 
-        public NotificationsHub(IMongoDatabase mongoDb, HubHelperService helperService, UserManager<UserModel> userManager)
+        public NotificationsHub(NotificationService notificationService, GroupService groupService, UserManager<UserModel> userManager)
         {
-            _notificationsCollection = mongoDb.GetCollection<NotificationModel>("notifications");
-            _groupsCollection = mongoDb.GetCollection<GroupModel>("groups");
-            _helperService = helperService;
+            _notificationService = notificationService;
+            _groupService = groupService;
             _userManager = userManager;
         }
 
@@ -28,78 +26,66 @@ namespace RealTimeChatApp.API.Hubs
             var userId = Context.UserIdentifier;
             if (string.IsNullOrEmpty(userId))
             {
+                await Clients.Caller.SendAsync("ReceiveMessage", "System", "User is not authenticated.");
                 return;
             }
 
-            var notifications = await _notificationsCollection
-                .Find(n => n.UserId == userId && !n.IsRead)
-                .SortByDescending(n => n.CreatedAt)
-                .ToListAsync();
+            var notifications = await _notificationService.GetUnreadNotificationsAsync(userId);
 
             await Clients.Caller.SendAsync("ReceiveAllNotifications", notifications);
         }
 
         public async Task SendNotificationToUser(string userId, string message, NotificationType type)
         {
+            if (string.IsNullOrEmpty(userId))
+            {
+                await Clients.Caller.SendAsync("ReceiveMessage", "System", "Invalid user ID.");
+                return;
+            }
+
             var user = await _userManager.FindByIdAsync(userId);
             if (user == null)
             {
                 await Clients.Caller.SendAsync("ReceiveMessage", "System", "User not found.");
                 return;
             }
-            var notification = new NotificationModel
-            {
-                UserId = userId,
-                Message = message,
-                Type = type,
-                CreatedAt = DateTime.UtcNow,
-                IsRead = false
-            };
-            await _notificationsCollection.InsertOneAsync(notification);
 
+            var notification = await _notificationService.CreateNotificationAsync(userId, message, type);
             await Clients.User(userId).SendAsync("ReceiveNotification", notification);
         }
 
         public async Task SendNotificationToGroup(string groupId, string messageContent, NotificationType type)
         {
 
-            var roomUserIds = await _helperService.GetUserIdsInGroupAsync(groupId);
+            var roomUserIds = await _groupService.GetUserIdsInGroupAsync(groupId);
 
             if (roomUserIds.Count == 0)
             {
+                await Clients.Caller.SendAsync("ReceiveMessage", "System", "No users in the group.");
                 return;
             }
 
-            foreach (var userId in roomUserIds)
+            var tasks = roomUserIds.Select(async userId =>
             {
-                var notification = new NotificationModel
-                {
-                    UserId = userId,
-                    Message = messageContent,
-                    CreatedAt = DateTime.UtcNow,
-                    IsRead = false,
-                    Type = type
-                };
-
-                // Save the notification to the database
-                await _notificationsCollection.InsertOneAsync(notification);
-
-                // Send real-time notification to each user in the group (not to the sender)
+                var notification = await _notificationService.CreateNotificationAsync(userId, messageContent, type);
                 await Clients.User(userId).SendAsync("ReceiveNotification", notification);
-            }
+            });
+
+            await Task.WhenAll(tasks);
         }
         public async Task MarkNotificationAsRead(string notificationId)
         {
-            var filter = Builders<NotificationModel>.Filter.Eq(n => n.Id, new ObjectId(notificationId));
-            var update = Builders<NotificationModel>.Update.Set(n => n.IsRead, true);
-
-            // Update the notification in the database
-            var result = await _notificationsCollection.UpdateOneAsync(filter, update);
-
-            if (result.ModifiedCount > 0)
+            if (!ObjectId.TryParse(notificationId, out var objectId))
             {
-                await Clients.Caller.SendAsync("NotificationRead", notificationId);
+                await Clients.Caller.SendAsync("ReceiveMessage", "System", "Invalid notification ID.");
+                return;
             }
+            var isUpdated = await _notificationService.MarkNotificationAsReadAsync(objectId);
+            if (isUpdated)
+                await Clients.Caller.SendAsync("NotificationRead", notificationId);
+
+            else
+                await Clients.Caller.SendAsync("ReceiveMessage", "System", "Notification not found or already read.");
         }
 
     }

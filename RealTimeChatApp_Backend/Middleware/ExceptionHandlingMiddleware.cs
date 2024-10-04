@@ -19,7 +19,7 @@ namespace RealTimeChatApp.API.Middleware
         {
             try
             {
-                await _next(context);  // Proceed to the next middleware or controller
+                await _next(context);  
             }
             catch (Exception ex)
             {
@@ -31,7 +31,7 @@ namespace RealTimeChatApp.API.Middleware
                 var response = new
                 {
                     message = "An unexpected error occurred. Please try again later.",
-                    error = ex.Message // You might want to customize this further or hide sensitive info
+                    error = ex.Message      // hide sensitive info if needed
                 };
 
                 await context.Response.WriteAsync(Newtonsoft.Json.JsonConvert.SerializeObject(response));

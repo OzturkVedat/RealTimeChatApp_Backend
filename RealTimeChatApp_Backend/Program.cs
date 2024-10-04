@@ -36,6 +36,9 @@ var mongoDbIdentityConfig = new MongoDbIdentityConfiguration
     {
         options.Password.RequireDigit = true;
         options.Password.RequiredLength = 8;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredUniqueChars = 3;
+        options.Password.RequireUppercase = false;
 
         options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(10);
         options.Lockout.MaxFailedAccessAttempts = 5;
@@ -106,7 +109,6 @@ builder.Services.AddSwaggerGen(option =>
 });
 
 builder.Services.AddSignalR();
-builder.Services.AddHostedService<ServerTimeNotifier>();
 builder.Services.AddCors();
 
 var app = builder.Build();
