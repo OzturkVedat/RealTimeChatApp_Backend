@@ -9,22 +9,20 @@ namespace RealTimeChatApp.API.Models
     [BsonIgnoreExtraElements]
     public class UserModel : MongoIdentityUser<string>
     {
-        public string FullName { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;  
         [BsonIgnoreIfNull]
-        public string? ProfileImageUrl { get; set; }  
-
-        [BsonIgnoreIfNull]
-        public string? StatusMessage { get; set; }    // Custom status message (e.g., "Available", "Busy")
-
-        public List<GroupModel> Groups { get; set; }= new List<GroupModel>();
+        public string? StatusMessage { get; set; }   
+        public List<ObjectId> ChatIds { get; set; } = new List<ObjectId>();
+        public List<string> FriendsListIds { get; set; }= new List<string>();
+        public bool isOnline {  get; set; }
         [BsonIgnoreIfNull]
         public RefreshToken RefreshToken { get; set; }
 
     }
     public class RefreshToken
     {
-        public string Token { get; set; }
-        public DateTime ExpiryDate { get; set; }
-        public bool IsRevoked { get; set; }
+        public string Token { get; set; }= Guid.NewGuid().ToString();
+        public DateTime ExpiryDate { get; set; }= DateTime.UtcNow;
+        public bool IsRevoked { get; set; } = false;
     }
 }

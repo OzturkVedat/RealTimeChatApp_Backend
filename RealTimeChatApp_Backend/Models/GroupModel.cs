@@ -8,9 +8,19 @@ namespace RealTimeChatApp.API.Models
     {
         public ObjectId Id { get; set; }
         public string GroupName { get; set; }
-        public List<string> UserIds { get; set; }
+        public string Description {  get; set; }
         public string AdminId {  get; set; }
         public DateTime CreatedAt { get; set; }
-        public List<MessageModel> Messages { get; set; }
+        public ObjectId ChatId { get; set; }
+
+        public GroupModel(string createdById, string groupName,  string description = "")
+        {
+            AdminId = createdById;
+            GroupName = groupName;
+            Description = description;
+            CreatedAt = DateTime.UtcNow;
+            ChatId = ObjectId.GenerateNewId(); 
+        }
     }
+
 }

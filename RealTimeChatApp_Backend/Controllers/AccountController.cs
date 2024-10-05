@@ -39,7 +39,11 @@ namespace RealTimeChatApp.API.Controllers
             {
                 UserName = request.Email,  //  username is set as email for login purposes
                 Email = request.Email,
-                FullName = request.FullName
+                FullName = request.FullName,
+                StatusMessage = "Hi, I'm Dominic Reyes.",
+                FriendsListIds = new List<string>(),
+                ChatIds = new List<MongoDB.Bson.ObjectId>(),
+                isOnline = true
             };
             var result = await _userManager.CreateAsync(newUser, request.Password);
             if (!result.Succeeded)
@@ -50,7 +54,7 @@ namespace RealTimeChatApp.API.Controllers
             var registeredUser = await _userManager.FindByEmailAsync(request.Email);
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, registeredUser.Id.ToString()),
+                new Claim(ClaimTypes.NameIdentifier, registeredUser.Id),
                 new Claim(ClaimTypes.Email, registeredUser.Email)
             };
             await _userManager.AddClaimsAsync(registeredUser, claims);

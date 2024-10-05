@@ -7,9 +7,10 @@ using Microsoft.OpenApi.Models;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
-using RealTimeChatApp.API.Hubs;
+using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Middleware;
 using RealTimeChatApp.API.Models;
+using RealTimeChatApp.API.Repository;
 using RealTimeChatApp.API.Services;
 using System.Text;
 
@@ -76,6 +77,11 @@ builder.Services.AddAuthentication(auth =>
 
 builder.Services.AddScoped<IJwtService, JwtService>();
 
+builder.Services.AddScoped<IChatRepository, ChatRepository>();
+builder.Services.AddScoped<IMessageRepository, MessageRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+
+
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
@@ -125,8 +131,8 @@ app.UseCors(policy => policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin())
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
 
-app.MapHub<ChatHub>("/chat");
-app.MapHub<NotificationsHub>("/notifications");
+//app.MapHub<ChatHub>("/chat");
+//app.MapHub<NotificationsHub>("/notifications");
 
 app.UseAuthentication();
 app.UseAuthorization();
