@@ -5,80 +5,181 @@ using MongoDB.Driver;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
-using SharpCompress.Common;
+using Microsoft.Extensions.Logging;
 
 namespace RealTimeChatApp.API.Repository
 {
     public class UserRepository : IUserRepository
     {
         private readonly IMongoCollection<UserModel> _usersCollection;
-        public UserRepository(IMongoDatabase mongoDb)
+        private readonly ILogger<UserRepository> _logger;
+
+        public UserRepository(IMongoDatabase mongoDb, ILogger<UserRepository> logger)
         {
             _usersCollection = mongoDb.GetCollection<UserModel>("users");
-        }
-        public async Task<UserModel> GetUserById(string id)
-        {
-            return await _usersCollection.Find(x => x.Id == id).FirstOrDefaultAsync();
-           
+            _logger = logger;
         }
 
-        public async Task<List<ObjectId>> GetLastUserChatsById(string userId, int limit)
+        public async Task<ResultModel> GetUserById(string id)
         {
-            var user = await GetUserById(userId);
-            return user?.ChatIds?.Take(limit).ToList() ?? new List<ObjectId>();
-        }
-
-        public async Task<List<string>> GetUserFriendIds(string userId)
-        {
-            var user = await GetUserById(userId);
-            return user.FriendsListIds;
-        }
-
-        public async Task<Dictionary<string,string>> GetUserFriendFullnames(List<string> friendIds)
-        {
-            var filter = Builders<UserModel>.Filter.In(u => u.Id, friendIds); 
-            var projection = Builders<UserModel>.Projection.Include(u => u.Email).Include(u => u.FullName);
-
-            var users = await _usersCollection.Find(filter)
-                                              .Project<UserModel>(projection)
-                                              .ToListAsync();
-
-            var userDetails = new Dictionary<string, string>();
-            foreach (var user in users)
-                userDetails[user.Id] = user.FullName;
-            
-            return userDetails;
-        }
-
-        public async Task<ResultModel> SaveUserFriendByEmail(string userId, string email)
-        {
-            var friendUser = await _usersCollection.Find(u => u.Email == email).FirstOrDefaultAsync();
-
-            if (friendUser == null)
-                return new ErrorResult("User not found for the given email.");
-
-            var currentUser = await GetUserById(userId);
-            if (!currentUser.FriendsListIds.Contains(friendUser.Id))
+            try
             {
-                currentUser.FriendsListIds.Add(friendUser.Id);
-                await UpdateUser(currentUser);
-                return new SuccessResult("Friend added.");
+                var user = await _usersCollection.Find(x => x.Id == id).FirstOrDefaultAsync();
+                if (user == null)
+                {
+                    _logger.LogWarning("User with ID {UserId} not found.", id);
+                    return new ErrorResult("User not found.", ErrorType.NotFound);
+                }
+
+                _logger.LogInformation("User with ID {UserId} retrieved successfully.", id);
+                return new SuccessDataResult<UserModel>("User retrieved successfully.", user);
             }
-            return new ErrorResult("User already has this friend on the friends list.");
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while retrieving user with ID {UserId}.", id);
+                return new ErrorResult("An error occurred while retrieving the user.", ErrorType.ServerError);
+            }
         }
 
-        public async Task SaveUserChatById(string userId,ObjectId chatId)
+        public async Task<ResultModel> GetLastUserChatsById(string userId, int limit)
         {
-            var user = await _usersCollection.Find(u => u.Id == userId).FirstOrDefaultAsync();
-            user.ChatIds.Add(chatId);
-            await UpdateUser(user);
+            try
+            {
+                var userResult = await GetUserById(userId);
+                if (!userResult.IsSuccess)
+                    return userResult;
+
+                var user = ((SuccessDataResult<UserModel>)userResult).Data;
+                var chatIds = user?.ChatIds?.Take(limit).ToList() ?? new List<ObjectId>();      // return empty list instead of null exception
+
+                return new SuccessDataResult<List<ObjectId>>("Successfully fetched the last user chat IDs", chatIds);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while fetching last user chats for user ID {UserId}.", userId);
+                return new ErrorResult("An error occurred while fetching last user chats.", ErrorType.ServerError);
+            }
         }
 
-
-        public async Task UpdateUser(UserModel updatedModel)
+        public async Task<ResultModel> GetUserFriendIds(string userId)
         {
-            await _usersCollection.ReplaceOneAsync(m => m.Id == updatedModel.Id, updatedModel);
-        }    
+            try
+            {
+                var userResult = await GetUserById(userId);
+                if (!userResult.IsSuccess)
+                    return userResult;
 
+                var user = ((SuccessDataResult<UserModel>)userResult).Data;
+                return new SuccessDataResult<List<string>>("User friend IDs retrieved successfully.", user.FriendsListIds);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while fetching friend IDs for user ID {UserId}.", userId);
+                return new ErrorResult("An error occurred while fetching user friend IDs.", ErrorType.ServerError);
+            }
+        }
+
+        public async Task<ResultModel> GetUserFriendFullnames(List<string> friendIds)
+        {
+            try
+            {
+                var filter = Builders<UserModel>.Filter.In(u => u.Id, friendIds);
+                var projection = Builders<UserModel>.Projection.Include(u => u.FullName);
+
+                var users = await _usersCollection.Find(filter)
+                                                  .Project<UserModel>(projection)
+                                                  .ToListAsync();
+
+                var userDetails = new Dictionary<string, string>();
+                foreach (var user in users)
+                {
+                    userDetails[user.Id] = user.FullName;
+                }
+
+                _logger.LogInformation("Retrieved full names for {Count} friends.", users.Count);
+                return new SuccessDataResult<Dictionary<string, string>>("User full names retrieved successfully.", userDetails);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while fetching friend full names.");
+                return new ErrorResult("An error occurred while fetching user friend full names.", ErrorType.ServerError);
+            }
+        }
+
+        public async Task<ResultModel> AddUserFriendByEmail(string userId, string email)
+        {
+            try
+            {
+                var friendUser = await _usersCollection.Find(u => u.Email == email).FirstOrDefaultAsync();
+
+                if (friendUser == null)
+                {
+                    _logger.LogWarning("User not found for the given email: {Email}.", email);
+                    return new ErrorResult("User not found for the given email.", ErrorType.NotFound);
+                }
+
+                var currentUserResult = await GetUserById(userId);
+                if (!currentUserResult.IsSuccess)
+                    return currentUserResult; // Return the error from GetUserById if the user is not found.
+
+                var currentUser = ((SuccessDataResult<UserModel>)currentUserResult).Data;
+
+                if (!currentUser.FriendsListIds.Contains(friendUser.Id))
+                {
+                    currentUser.FriendsListIds.Add(friendUser.Id);
+                    await UpdateUser(currentUser);
+
+                    friendUser.FriendsListIds.Add(currentUser.Id);
+                    await UpdateUser(friendUser);
+
+                    _logger.LogInformation("Friend with ID {FriendId} added to user with ID {UserId}.", friendUser.Id, userId);
+                    return new SuccessResult("Friend added.");
+                }
+
+                _logger.LogWarning("User with ID {UserId} already has friend with ID {FriendId} on their friends list.", userId, friendUser.Id);
+                return new ErrorResult("User already has this friend on the friends list.", ErrorType.Conflict);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while adding friend by email for user ID {UserId}.", userId);
+                return new ErrorResult("An error occurred while adding friend.", ErrorType.ServerError);
+            }
+        }
+
+        public async Task<ResultModel> AddUserChatById(string userId, ObjectId chatId)
+        {
+            try
+            {
+                var userResult = await GetUserById(userId);
+                if (!userResult.IsSuccess)
+                    return userResult;
+
+                var user = ((SuccessDataResult<UserModel>)userResult).Data;
+                user.ChatIds.Add(chatId);
+                await UpdateUser(user);
+                _logger.LogInformation("Chat ID {ChatId} saved for user ID {UserId}.", chatId, userId);
+                return new SuccessResult("Chat saved successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while adding chat for user ID {UserId}.", userId);
+                return new ErrorResult("An error occurred while adding chat.", ErrorType.ServerError);
+            }
+        }
+
+        public async Task<ResultModel> UpdateUser(UserModel updatedModel)
+        {
+            try
+            {
+                await _usersCollection.ReplaceOneAsync(m => m.Id == updatedModel.Id, updatedModel);
+                _logger.LogInformation("User with ID {UserId} updated successfully.", updatedModel.Id);
+                return new SuccessResult("User updated successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while updating user ID {UserId}.", updatedModel.Id);
+                return new ErrorResult("An error occurred while updating the user.", ErrorType.ServerError);
+            }
+        }
     }
 }

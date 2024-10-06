@@ -8,7 +8,6 @@ using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 using RealTimeChatApp.API.Interface;
-using RealTimeChatApp.API.Middleware;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.Repository;
 using RealTimeChatApp.API.Services;
@@ -128,7 +127,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors(policy => policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
 
-app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
 
 //app.MapHub<ChatHub>("/chat");

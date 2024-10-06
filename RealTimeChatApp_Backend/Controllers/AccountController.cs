@@ -33,7 +33,7 @@ namespace RealTimeChatApp.API.Controllers
 
             var user = await _userManager.FindByEmailAsync(request.Email);
             if (user != null)
-                return Conflict(new ErrorResult("User is already registered."));
+                return Conflict(new ErrorResult("User is already registered.", ErrorType.Conflict));
 
             var newUser = new UserModel
             {
@@ -71,7 +71,7 @@ namespace RealTimeChatApp.API.Controllers
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
 
             if (user == null || !result.Succeeded)
-                return Unauthorized("Invalid email or password.");
+                return Unauthorized(new ErrorResult("Invalid email or password."));
 
             var claims = await _userManager.GetClaimsAsync(user);
 

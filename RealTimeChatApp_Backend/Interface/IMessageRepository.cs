@@ -1,4 +1,5 @@
 ﻿using MongoDB.Bson;
+using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Models;
 
 namespace RealTimeChatApp.API.Interface
@@ -6,8 +7,8 @@ namespace RealTimeChatApp.API.Interface
     public interface IMessageRepository
     {
         //Task<MessageModel> GetPrivateMessageById(ObjectId id);
-        Task<List<PrivateMessage>> GetPrivateMessagesByIds(List<ObjectId> messageIds);
-        Task<List<GroupMessage>> GetGroupMessagesByIds(List<ObjectId> messageIds);
+        Task<ResultModel> GetPrivateMessagesByIds(List<ObjectId> messageIds);
+        Task<ResultModel> GetGroupMessagesByIds(List<ObjectId> messageIds);
 
     }
 }

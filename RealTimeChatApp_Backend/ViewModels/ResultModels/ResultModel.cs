@@ -21,15 +21,34 @@
     }
     public class ErrorResult : ResultModel
     {
+        public ErrorType? Type { get; set; }
         public ErrorResult()
         {
             IsSuccess = false;
+            Message = "An error happened.";
+            Type = ErrorType.Unknown;
         }
-
         public ErrorResult(string message)
         {
             IsSuccess = false;
             Message = message;
         }
+
+        public ErrorResult(string message, ErrorType type)
+        {
+            IsSuccess = false;
+            Message = message;
+            Type = type;        // for repository layer responses
+        }
+
     }
+    public enum ErrorType
+    {
+        Unknown,
+        NotFound,
+        Unauthorized,
+        Conflict,
+        ServerError
+    }
+
 }
