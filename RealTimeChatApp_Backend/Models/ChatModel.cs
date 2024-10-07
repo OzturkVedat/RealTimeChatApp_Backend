@@ -10,7 +10,7 @@ namespace RealTimeChatApp.API.Models
         public ObjectId Id { get; set; }
         public List<string> ParicipantIds { get; set; } 
         public string ChatTitle {  get; set; }
-        public string LastMessageId { get; set; } 
+        public ObjectId LastMessageId { get; set; } 
         public ChatType Type { get; set; }
         public List<ObjectId> MessageIds { get; set; }
 

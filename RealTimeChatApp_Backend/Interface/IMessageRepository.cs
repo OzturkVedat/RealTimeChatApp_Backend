@@ -6,9 +6,10 @@ namespace RealTimeChatApp.API.Interface
 {
     public interface IMessageRepository
     {
-        //Task<MessageModel> GetPrivateMessageById(ObjectId id);
         Task<ResultModel> GetPrivateMessagesByIds(List<ObjectId> messageIds);
         Task<ResultModel> GetGroupMessagesByIds(List<ObjectId> messageIds);
+        Task<ResultModel> UpdatePrivateMessage(PrivateMessage message);
+        Task<ResultModel> UpdateGroupMessage(GroupMessage message);
 
     }
 }

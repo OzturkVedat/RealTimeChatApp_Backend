@@ -41,6 +41,27 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
+        public async Task<ResultModel> GetUserChatCount(string userId)
+        {
+            try
+            {
+                var userResult = await GetUserById(userId);
+                if (!userResult.IsSuccess)
+                    return userResult;
+                if(userResult is SuccessDataResult<UserModel> successResult)
+                {
+                    int chatCount= successResult.Data.ChatIds.Count;
+                    return new SuccessDataResult<int>("Successfully fetched the count", chatCount);
+                }
+                return new ErrorResult("Error while chat count");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while fetching user chat counts for user ID {UserId}.", userId);
+                return new ErrorResult("An error occurred while fetching user chat count.", ErrorType.ServerError);
+            }
+        }
+
         public async Task<ResultModel> GetLastUserChatsById(string userId, int limit)
         {
             try
@@ -181,5 +202,26 @@ namespace RealTimeChatApp.API.Repository
                 return new ErrorResult("An error occurred while updating the user.", ErrorType.ServerError);
             }
         }
+        public async Task<ResultModel> UpdateUserStatus(string userId, bool isOnline)
+        {
+            try
+            {
+                var updateDefinition = Builders<UserModel>.Update.Set(u => u.isOnline, isOnline);
+                var result = await _usersCollection.UpdateOneAsync(u => u.Id == userId, updateDefinition);
+                if (result.ModifiedCount > 0)
+                {
+                    _logger.LogInformation("User status updated successfully for user ID {UserId}.", userId);
+                    return new SuccessResult("User status updated.");
+                }
+                return new ErrorResult("Failed to update: User not found.");
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error occured while updating the user online status.");
+                return new ErrorResult("Error occured while updating the user online status.");
+            }
+        }
+
     }
 }

@@ -43,7 +43,8 @@ namespace RealTimeChatApp.API.Controllers
                 StatusMessage = "Hi, I'm Dominic Reyes.",
                 FriendsListIds = new List<string>(),
                 ChatIds = new List<MongoDB.Bson.ObjectId>(),
-                isOnline = true
+                isOnline = true,
+                isTyping = false,
             };
             var result = await _userManager.CreateAsync(newUser, request.Password);
             if (!result.Succeeded)

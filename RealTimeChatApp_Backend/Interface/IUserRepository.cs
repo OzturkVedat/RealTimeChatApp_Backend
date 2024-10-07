@@ -9,10 +9,12 @@ namespace RealTimeChatApp.API.Interface
     {
         Task <ResultModel> GetUserById(string id);
         Task<ResultModel> GetLastUserChatsById(string userId, int limit);
+        Task<ResultModel> GetUserChatCount(string userId);
         Task<ResultModel> GetUserFriendIds(string userId);
         Task<ResultModel> GetUserFriendFullnames(List<string> friendIds);
         Task<ResultModel> AddUserFriendByEmail(string userId, string email);
         Task<ResultModel> AddUserChatById(string userId, ObjectId chatId);
         Task<ResultModel> UpdateUser(UserModel model);
+        Task<ResultModel> UpdateUserStatus(string userId, bool isOnline);
     }
 }

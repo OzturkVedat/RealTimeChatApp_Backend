@@ -30,16 +30,16 @@ namespace RealTimeChatApp.API.Controllers
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
+
             var result = await _userRepository.GetUserById(userIdClaim.Value);
-            if (result.IsSuccess)
-                return Ok(result);
+            if (result is ErrorResult errorResult)
+            {
+                if (errorResult.Type == ErrorType.NotFound)
+                    return NotFound(errorResult);
 
-            var errorResult = result as ErrorResult;         // return proper response type
-            if (errorResult.Type == ErrorType.NotFound)
-                return NotFound(errorResult);
-
-            return BadRequest(errorResult);     // server-side error
-
+                return BadRequest(errorResult);     // server-side error
+            }
+            return Ok(result);
         }
 
         [HttpGet("user-private-chats/{limit}")]
@@ -53,21 +53,20 @@ namespace RealTimeChatApp.API.Controllers
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
             var chatIdsResult = await _userRepository.GetLastUserChatsById(userIdClaim.Value, limit);
-            if (!chatIdsResult.IsSuccess)
-                return BadRequest(chatIdsResult);       // server-side error
+            if( chatIdsResult is SuccessDataResult<List<ObjectId>> successResult)
+            {
+                var chatsResult = await _chatRepository.GetChatsByIds(successResult.Data);
+                return chatsResult.IsSuccess ? Ok(chatsResult) : BadRequest(chatsResult);
+            }
+            return BadRequest(chatIdsResult);    
 
-            var successResult = chatIdsResult as SuccessDataResult<List<ObjectId>>;
-            var chatsResult = await _chatRepository.GetChatsByIds(successResult.Data);
-
-            return chatsResult.IsSuccess ? Ok(chatsResult) : BadRequest(chatsResult);
         }
 
         [HttpGet("chat-messages")]
         public async Task<IActionResult> GetMessagesOfChatById(ObjectId chatId)
         {
             var chatResult = await _chatRepository.GetChatById(chatId);
-            var errorResult = chatResult as ErrorResult;    // cast it, check whether it is an error
-            if (errorResult != null)
+            if (chatResult is ErrorResult errorResult)
             {
                 if (errorResult.Type == ErrorType.NotFound)
                     return NotFound(errorResult);
@@ -124,7 +123,6 @@ namespace RealTimeChatApp.API.Controllers
                 if (errorResult.Type == ErrorType.Conflict) return Conflict(errorResult);
                 return BadRequest(errorResult);
             }
-
             return Ok(addFriendResult);
         }
 
