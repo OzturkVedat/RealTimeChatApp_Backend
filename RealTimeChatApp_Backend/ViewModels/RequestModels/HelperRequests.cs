@@ -11,7 +11,9 @@ namespace RealTimeChatApp.API.ViewModels.RequestModels
 
     public class NewChatRequest
     {
-        public string ChatTitle {  get; set; }
+        [Required(ErrorMessage = "Title is required")]
+        public string ChatTitle { get; set; }
+        [Required(ErrorMessage = "Select a friend please")]
         public string FriendId { get; set; }
     }
 

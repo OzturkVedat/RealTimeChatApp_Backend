@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using RealTimeChatApp.API.DTOs.RequestModels;
 using RealTimeChatApp.API.DTOs.ResultModels;
+using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.Services;
 using System.Security.Claims;
@@ -14,14 +15,17 @@ namespace RealTimeChatApp.API.Controllers
     {
         private readonly UserManager<UserModel> _userManager;
         private readonly SignInManager<UserModel> _signInManager;
+        private readonly IUserRepository _userRepository;
         private readonly IJwtService _jwtService;
 
         public AccountController(UserManager<UserModel> userManager,
                                  SignInManager<UserModel> signInManager,
+                                 IUserRepository userRepository,
                                  IJwtService jwtService)
         {
             _userManager = userManager;
             _signInManager = signInManager;
+            _userRepository = userRepository;
             _jwtService = jwtService;
         }
 
@@ -43,7 +47,7 @@ namespace RealTimeChatApp.API.Controllers
                 StatusMessage = "Hi, I'm Dominic Reyes.",
                 FriendsListIds = new List<string>(),
                 ChatIds = new List<MongoDB.Bson.ObjectId>(),
-                isOnline = true,
+                isOnline = false,
                 isTyping = false,
             };
             var result = await _userManager.CreateAsync(newUser, request.Password);
@@ -69,9 +73,11 @@ namespace RealTimeChatApp.API.Controllers
                 return BadRequest(new ErrorDataResult("Invalid input for author registration", ModelState.GetErrors()));
 
             var user = await _userManager.FindByEmailAsync(request.Email);
-            var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+            if (user == null)
+                return Unauthorized("User not found.");
 
-            if (user == null || !result.Succeeded)
+            var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+            if (!result.Succeeded)
                 return Unauthorized(new ErrorResult("Invalid email or password."));
 
             var claims = await _userManager.GetClaimsAsync(user);
@@ -87,6 +93,7 @@ namespace RealTimeChatApp.API.Controllers
                     AccessToken = jwtResult.Data,
                     RefreshToken = refreshTokenResult.Data
                 };
+                await _userRepository.UpdateUserStatus(user.Id, true);  // turn online
                 return Ok(new SuccessDataResult<LoginResponse>("Successfully logged in.", response));
             }
             return BadRequest(new ErrorResult("Error while trying to log in the user."));

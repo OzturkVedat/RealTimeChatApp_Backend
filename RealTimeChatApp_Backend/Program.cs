@@ -7,6 +7,7 @@ using Microsoft.OpenApi.Models;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
+using RealTimeChatApp.API.Hubs;
 using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.Repository;
@@ -114,7 +115,17 @@ builder.Services.AddSwaggerGen(option =>
 });
 
 builder.Services.AddSignalR();
-builder.Services.AddCors();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowLocalHost3000", policy =>
+    {
+        policy.WithOrigins("https://localhost:3000")
+        .AllowCredentials()
+        .AllowAnyHeader()
+        .AllowAnyMethod();
+    });
+});
 
 var app = builder.Build();
 
@@ -125,12 +136,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors(policy => policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
+app.UseCors("AllowLocalHost3000");
 
 app.UseHttpsRedirection();
 
-//app.MapHub<ChatHub>("/chat");
-//app.MapHub<NotificationsHub>("/notifications");
+app.MapHub<ChatHub>("/chat");
+app.MapHub<NotificationHub>("/notification");
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -6,6 +6,7 @@ using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
 using Microsoft.Extensions.Logging;
+using System.Linq.Expressions;
 
 namespace RealTimeChatApp.API.Repository
 {
@@ -48,9 +49,9 @@ namespace RealTimeChatApp.API.Repository
                 var userResult = await GetUserById(userId);
                 if (!userResult.IsSuccess)
                     return userResult;
-                if(userResult is SuccessDataResult<UserModel> successResult)
+                if (userResult is SuccessDataResult<UserModel> successResult)
                 {
-                    int chatCount= successResult.Data.ChatIds.Count;
+                    int chatCount = successResult.Data.ChatIds.Count;
                     return new SuccessDataResult<int>("Successfully fetched the count", chatCount);
                 }
                 return new ErrorResult("Error while chat count");
@@ -62,7 +63,7 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> GetLastUserChatsById(string userId, int limit)
+        public async Task<ResultModel> GetUserChatIds(string userId)
         {
             try
             {
@@ -71,7 +72,7 @@ namespace RealTimeChatApp.API.Repository
                     return userResult;
 
                 var user = ((SuccessDataResult<UserModel>)userResult).Data;
-                var chatIds = user?.ChatIds?.Take(limit).ToList() ?? new List<ObjectId>();      // return empty list instead of null exception
+                var chatIds = user?.ChatIds?.ToList() ?? new List<ObjectId>();      // return empty list instead of null exception
 
                 return new SuccessDataResult<List<ObjectId>>("Successfully fetched the last user chat IDs", chatIds);
             }
@@ -87,11 +88,12 @@ namespace RealTimeChatApp.API.Repository
             try
             {
                 var userResult = await GetUserById(userId);
-                if (!userResult.IsSuccess)
-                    return userResult;
-
-                var user = ((SuccessDataResult<UserModel>)userResult).Data;
-                return new SuccessDataResult<List<string>>("User friend IDs retrieved successfully.", user.FriendsListIds);
+                if (userResult is SuccessDataResult<UserModel> successResult)
+                {
+                    var idList = successResult.Data.FriendsListIds ?? new List<string>();
+                    return new SuccessDataResult<List<string>>("User friend IDs retrieved successfully.", idList);
+                }
+                return userResult;      // return error result
             }
             catch (Exception ex)
             {
@@ -100,30 +102,55 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> GetUserFriendFullnames(List<string> friendIds)
+        public async Task<ResultModel> GetUserFriendsFullnames(List<string> friendIds)
         {
             try
             {
                 var filter = Builders<UserModel>.Filter.In(u => u.Id, friendIds);
-                var projection = Builders<UserModel>.Projection.Include(u => u.FullName);
-
+                var projection = Builders<UserModel>.Projection.Include(u => u.FullName); 
                 var users = await _usersCollection.Find(filter)
-                                                  .Project<UserModel>(projection)
-                                                  .ToListAsync();
-
+                                                   .Project<UserModel>(projection)
+                                                   .ToListAsync();
                 var userDetails = new Dictionary<string, string>();
                 foreach (var user in users)
                 {
                     userDetails[user.Id] = user.FullName;
                 }
-
-                _logger.LogInformation("Retrieved full names for {Count} friends.", users.Count);
-                return new SuccessDataResult<Dictionary<string, string>>("User full names retrieved successfully.", userDetails);
+                return new SuccessDataResult<Dictionary<string, string>>(
+                    "User Fullnames retrieved successfully.",
+                    userDetails
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred while fetching friend full names.");
-                return new ErrorResult("An error occurred while fetching user friend full names.", ErrorType.ServerError);
+                _logger.LogError(ex, "An error occurred while fetching user friend fullnames.");
+                return new ErrorResult("An error occurred while fetching user friend fullnames.", ErrorType.ServerError);
+            }
+        }
+        public async Task<ResultModel> GetUserFriendsOnlineStatus(List<string> friendIds)
+        {
+            try
+            {
+                var filter = Builders<UserModel>.Filter.In(u => u.Id, friendIds);
+                var projection = Builders<UserModel>.Projection.Include(u => u.isOnline);  // Project OnlineStatus
+                var users = await _usersCollection.Find(filter)
+                                                   .Project<UserModel>(projection)
+                                                   .ToListAsync();
+
+                var userDetails = new Dictionary<string, bool>();
+                foreach (var user in users)
+                {
+                    userDetails[user.Id] = user.isOnline;
+                }
+                return new SuccessDataResult<Dictionary<string, bool>>(
+                    "User Online Status retrieved successfully.",
+                    userDetails
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while fetching user friend online statuses.");
+                return new ErrorResult("An error occurred while fetching user friend online statuses.", ErrorType.ServerError);
             }
         }
 
@@ -132,7 +159,6 @@ namespace RealTimeChatApp.API.Repository
             try
             {
                 var friendUser = await _usersCollection.Find(u => u.Email == email).FirstOrDefaultAsync();
-
                 if (friendUser == null)
                 {
                     _logger.LogWarning("User not found for the given email: {Email}.", email);
@@ -179,7 +205,7 @@ namespace RealTimeChatApp.API.Repository
                 user.ChatIds.Add(chatId);
                 await UpdateUser(user);
                 _logger.LogInformation("Chat ID {ChatId} saved for user ID {UserId}.", chatId, userId);
-                return new SuccessResult("Chat saved successfully.");
+                return new SuccessDataResult<ObjectId>("Chat with the ID saved successfully.", chatId);
             }
             catch (Exception ex)
             {

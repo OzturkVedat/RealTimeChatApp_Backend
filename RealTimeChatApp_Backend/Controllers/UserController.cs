@@ -42,24 +42,20 @@ namespace RealTimeChatApp.API.Controllers
             return Ok(result);
         }
 
-        [HttpGet("user-private-chats/{limit}")]
-        public async Task<IActionResult> GetUserLastPrivateChatDetails(int limit)
+        [HttpGet("user-private-chats")]
+        public async Task<IActionResult> GetUserPrivateChatDetails()
         {
-            if (limit <= 0)
-                return BadRequest(new ErrorResult("Limit must be a positive integer."));
-
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
-            var chatIdsResult = await _userRepository.GetLastUserChatsById(userIdClaim.Value, limit);
-            if( chatIdsResult is SuccessDataResult<List<ObjectId>> successResult)
+            var chatIdsResult = await _userRepository.GetUserChatIds(userIdClaim.Value);
+            if (chatIdsResult is SuccessDataResult<List<ObjectId>> successResult)
             {
                 var chatsResult = await _chatRepository.GetChatsByIds(successResult.Data);
                 return chatsResult.IsSuccess ? Ok(chatsResult) : BadRequest(chatsResult);
             }
-            return BadRequest(chatIdsResult);    
-
+            return BadRequest(chatIdsResult);
         }
 
         [HttpGet("chat-messages")]
@@ -93,16 +89,18 @@ namespace RealTimeChatApp.API.Controllers
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
             var friendIdsResult = await _userRepository.GetUserFriendIds(userIdClaim.Value);
-            if (!friendIdsResult.IsSuccess)
+            if(friendIdsResult is SuccessDataResult<List<string>> successResult)
+            {
+                var friendNamesResult = await _userRepository.GetUserFriendsFullnames(successResult.Data);
+                return friendNamesResult.IsSuccess ? Ok(friendNamesResult) : BadRequest(friendNamesResult);
+            }
+            else
             {
                 var errorResult = friendIdsResult as ErrorResult;
                 if (errorResult.Type == ErrorType.NotFound)
                     return NotFound(errorResult);
                 return BadRequest(errorResult);
-            }
-            var successResult = friendIdsResult as SuccessDataResult<List<string>>;
-            var friendNamesResult = await _userRepository.GetUserFriendFullnames(successResult.Data);
-            return friendNamesResult.IsSuccess ? Ok(friendNamesResult) : BadRequest(friendNamesResult);
+            }         
         }
 
         [HttpPost("add-friend")]
@@ -133,6 +131,9 @@ namespace RealTimeChatApp.API.Controllers
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
+            if(!ModelState.IsValid)
+                return BadRequest(new ErrorDataResult("Invalid input.", ModelState.GetErrors()));
+
             var chatters = new List<string> { userIdClaim.Value, request.FriendId };
             var newChat = new ChatModel(request.ChatTitle, chatters);
 
@@ -141,13 +142,12 @@ namespace RealTimeChatApp.API.Controllers
                 return BadRequest(saveChatResult);
 
             var chatAddResult = await _userRepository.AddUserChatById(userIdClaim.Value, newChat.Id);
-            var errorResult = chatAddResult as ErrorResult;
-            if (errorResult != null)
+            if (chatAddResult is ErrorResult errorResult)
             {
                 if (errorResult.Type == ErrorType.NotFound) return NotFound(errorResult);
                 return BadRequest(errorResult);
             }
-            return Ok(chatAddResult);
+            else return Ok(chatAddResult);      // return created chat's ID
         }
     }
 }
