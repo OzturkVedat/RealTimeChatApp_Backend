@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 using MongoDB.Bson;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Interface;
@@ -6,6 +8,7 @@ using RealTimeChatApp.API.Models;
 
 namespace RealTimeChatApp.API.Hubs
 {
+    [Authorize(AuthenticationSchemes =JwtBearerDefaults.AuthenticationScheme)]
     public class NotificationHub : Hub
     {
         private readonly IChatRepository _chatRepository;
@@ -16,6 +19,17 @@ namespace RealTimeChatApp.API.Hubs
             _chatRepository = chatRepository;
             _userRepository = userRepository;
             _messageRepository = messageRepository;
+        }
+
+        public async Task GetAuthenticatedUserId()
+        {
+            var userId = Context.UserIdentifier;
+            if (userId == null)
+            {
+                await Clients.Caller.SendAsync("ReceiveErrorMessage", "User not authenticated.");
+                return;
+            }
+            await Clients.Caller.SendAsync("ReceiveAuthenticatedUserId", userId);
         }
 
         public async Task GetFriendsOnlineStatus()

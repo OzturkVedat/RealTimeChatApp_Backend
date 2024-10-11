@@ -141,6 +141,7 @@ namespace RealTimeChatApp.API.Repository
                 foreach (var user in users)
                 {
                     userDetails[user.Id] = user.isOnline;
+                    _logger.LogInformation($"Friend ID: {user.Id}, Online Status: {user.isOnline}");
                 }
                 return new SuccessDataResult<Dictionary<string, bool>>(
                     "User Online Status retrieved successfully.",

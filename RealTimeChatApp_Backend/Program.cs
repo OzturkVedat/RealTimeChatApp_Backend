@@ -73,6 +73,20 @@ builder.Services.AddAuthentication(auth =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:SecretKey"])),
         ClockSkew = TimeSpan.Zero
     };
+    jwt.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/chat") || path.StartsWithSegments("/notification")))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddScoped<IJwtService, JwtService>();
@@ -118,12 +132,12 @@ builder.Services.AddSignalR();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowLocalHost3000", policy =>
+    options.AddPolicy("AllowReactApp", policy =>
     {
         policy.WithOrigins("https://localhost:3000")
-        .AllowCredentials()
         .AllowAnyHeader()
-        .AllowAnyMethod();
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -136,15 +150,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors("AllowLocalHost3000");
-
 app.UseHttpsRedirection();
 
-app.MapHub<ChatHub>("/chat");
-app.MapHub<NotificationHub>("/notification");
+app.UseCors("AllowReactApp");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+
+app.MapHub<ChatHub>("/chat");
+app.MapHub<NotificationHub>("/notification");
 
 app.MapControllers();
 

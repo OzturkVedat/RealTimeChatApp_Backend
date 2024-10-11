@@ -4,6 +4,7 @@ using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
 using Microsoft.Extensions.Logging;
 using RealTimeChatApp.API.DTOs.ResultModels;
+using System;
 
 namespace RealTimeChatApp.API.Repository
 {
@@ -51,31 +52,58 @@ namespace RealTimeChatApp.API.Repository
                 return new ErrorResult("An error occurred while retrieving group messages.", ErrorType.ServerError);
             }
         }
-        public async Task<ResultModel> UpdatePrivateMessage(PrivateMessage message)
+        public async Task<ResultModel> SaveNewMessage(MessageModel message)
         {
-            var filter = Builders<PrivateMessage>.Filter.Eq(m => m.Id, message.Id);
-            var update = Builders<PrivateMessage>.Update.Set(m => m.ReadStatus, message.ReadStatus);
-
-            var result = await _privateMessagesCol.UpdateOneAsync(filter, update);
-            if (result.ModifiedCount > 0)
+            try
             {
-                return new SuccessResult("Message read status updated.");
+                if(message is PrivateMessage privateMessage)
+                {
+                    await _privateMessagesCol.InsertOneAsync(privateMessage);
+                    return new SuccessResult("Message saved successfully.");
+                }
+                else if(message is GroupMessage groupMessage)
+                {
+                    await _groupMessagesCol.InsertOneAsync(groupMessage);
+                    return new SuccessResult("Message saved successfully.");
+                }
+                return new ErrorResult("Failed to save the message");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while saving the message.");
+                return new ErrorResult("An error occurred while saving the message.");
+            }
+        }
+
+        public async Task<ResultModel> UpdateReadStatusOfMessage(MessageModel message)
+        {
+            if(message is PrivateMessage privateMessage)
+            {
+                var filter = Builders<PrivateMessage>.Filter.Eq(m => m.Id, privateMessage.Id);
+                var update = Builders<PrivateMessage>.Update.Set(m => m.ReadStatus, privateMessage.ReadStatus);
+
+                var result = await _privateMessagesCol.UpdateOneAsync(filter, update);
+                if (result.ModifiedCount > 0)
+                {
+                    return new SuccessResult("Message read status updated.");
+                }
+                return new ErrorResult("Failed to update message.");
+            }
+            if (message is GroupMessage groupMessage) 
+            {
+                var filter = Builders<GroupMessage>.Filter.Eq(m => m.Id, groupMessage.Id);
+                var update = Builders<GroupMessage>.Update.Set(m => m.ReadStatus, groupMessage.ReadStatus);
+
+                var result = await _groupMessagesCol.UpdateOneAsync(filter, update);
+                if (result.ModifiedCount > 0)
+                {
+                    return new SuccessResult("Group message read status updated.");
+                }
+                return new ErrorResult("Failed to update message.");
             }
             return new ErrorResult("Failed to update message.");
         }
 
-        public async Task<ResultModel> UpdateGroupMessage(GroupMessage message)
-        {
-            var filter = Builders<GroupMessage>.Filter.Eq(m => m.Id, message.Id);
-            var update = Builders<GroupMessage>.Update.Set(m => m.ReadStatus, message.ReadStatus);
-
-            var result = await _groupMessagesCol.UpdateOneAsync(filter, update);
-            if (result.ModifiedCount > 0)
-            {
-                return new SuccessResult("Group message read status updated.");
-            }
-            return new ErrorResult("Failed to update message.");
-        }
 
     }
 }

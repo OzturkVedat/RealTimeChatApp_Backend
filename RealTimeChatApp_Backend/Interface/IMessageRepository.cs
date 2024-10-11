@@ -8,8 +8,8 @@ namespace RealTimeChatApp.API.Interface
     {
         Task<ResultModel> GetPrivateMessagesByIds(List<ObjectId> messageIds);
         Task<ResultModel> GetGroupMessagesByIds(List<ObjectId> messageIds);
-        Task<ResultModel> UpdatePrivateMessage(PrivateMessage message);
-        Task<ResultModel> UpdateGroupMessage(GroupMessage message);
+        Task<ResultModel> SaveNewMessage(MessageModel message);
+        Task<ResultModel> UpdateReadStatusOfMessage(MessageModel message);
 
     }
 }

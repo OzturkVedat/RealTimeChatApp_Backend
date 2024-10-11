@@ -1,12 +1,14 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 using MongoDB.Bson;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
 
+[Authorize(AuthenticationSchemes =JwtBearerDefaults.AuthenticationScheme)]
 public class ChatHub : Hub
 {
-
     private readonly IUserRepository _userRepository;
     private readonly IChatRepository _chatRepository;
     private readonly IMessageRepository _messageRepository;
@@ -80,11 +82,22 @@ public class ChatHub : Hub
         }
     }
 
-    public async Task SendMessage(ObjectId chatId, string userId, string message)
+    public async Task SendPrivateMessage(ObjectId chatId, string recipientId, string message)
     {
+        var userId = Context.UserIdentifier;
+        if (userId == null)
+        {
+            await Clients.Caller.SendAsync("ReceiveErrorMessage", "User not authenticated.");
+            return;
+        }
         if (string.IsNullOrWhiteSpace(message))
         {
             await Clients.Caller.SendAsync("ReceiveErrorMessage", "Message cannot be empty.");
+            return;
+        }
+        if (message.Length > 1000) 
+        {
+            await Clients.Caller.SendAsync("ReceiveErrorMessage", "Message is too long. Max 1000 characters.");
             return;
         }
         var chatResult = await _chatRepository.GetChatById(chatId);
@@ -94,10 +107,23 @@ public class ChatHub : Hub
             await Clients.Caller.SendAsync("ReceiveErrorMessage", errorResult.Message);
             return;
         }
-        await Clients.Group(chatId.ToString()).SendAsync("ReceiveMessage", userId, message);
-    }
+        var chatSuccess = (SuccessDataResult<ChatModel>)chatResult;
+        var chat = chatSuccess.Data;
+        if(!chat.ParicipantIds.Contains(userId))
+        {
+            await Clients.Caller.SendAsync("ReceiveErrorMessage", "You are not a participant in this chat.");
+            return;
+        }
 
-   
+        var saveResult = await _messageRepository.SaveNewMessage(new PrivateMessage(userId, recipientId, message));
+        if (!saveResult.IsSuccess)
+        {
+            await Clients.Caller.SendAsync("ReceiveErrorMessage", "Failed to save the message.");
+            return;
+        }
+        await Clients.User(recipientId).SendAsync("ReceiveMessage", userId, message); // Send to recipient only
+        await Clients.Caller.SendAsync("MessageSent", "Message sent successfully.");
+    }
 
 }
 

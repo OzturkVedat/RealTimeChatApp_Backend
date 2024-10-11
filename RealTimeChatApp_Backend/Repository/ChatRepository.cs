@@ -58,7 +58,6 @@ namespace RealTimeChatApp.API.Repository
             try
             {
                 await _chatsCollection.InsertOneAsync(chat);
-                _logger.LogInformation("Chat saved successfully with ID {ChatId}.", chat.Id);
                 return new SuccessResult("Chat saved successfully.");
             }
             catch (Exception ex)
