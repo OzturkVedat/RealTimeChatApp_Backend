@@ -5,68 +5,102 @@ using RealTimeChatApp.API.Models;
 using Microsoft.Extensions.Logging;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using System;
+using RealTimeChatApp.API.ViewModels.ResultModels;
 
 namespace RealTimeChatApp.API.Repository
 {
     public class MessageRepository : IMessageRepository
     {
-        private readonly IMongoCollection<PrivateMessage> _privateMessagesCol;
-        private readonly IMongoCollection<GroupMessage> _groupMessagesCol;
+        private readonly IMongoCollection<MessageModel> _messageCollection;
+        private readonly IUserRepository _userRepository;
         private readonly ILogger<MessageRepository> _logger;
 
-        public MessageRepository(IMongoDatabase mongoDb, ILogger<MessageRepository> logger)
+        public MessageRepository(IMongoDatabase mongoDb, IUserRepository userRepository, ILogger<MessageRepository> logger)
         {
-            _privateMessagesCol = mongoDb.GetCollection<PrivateMessage>("privateMessages");
-            _groupMessagesCol = mongoDb.GetCollection<GroupMessage>("groupMessages");
+            _messageCollection = mongoDb.GetCollection<MessageModel>("messages");
+            _userRepository = userRepository;
             _logger = logger;
         }
 
-        public async Task<ResultModel> GetPrivateMessagesByIds(List<ObjectId> messageIds)
+        public async Task<ResultModel> GetMessageById(ObjectId messageId)
         {
             try
             {
-                var filter = Builders<PrivateMessage>.Filter.In(m => m.Id, messageIds);
-                var privateMessages = await _privateMessagesCol.Find(filter).ToListAsync();
-                _logger.LogInformation("{Count} private messages retrieved successfully.", privateMessages.Count);
-                return new SuccessDataResult<List<PrivateMessage>>("Private messages retrieved successfully.", privateMessages);
+                var message = await _messageCollection.Find(c => c.Id == messageId).FirstOrDefaultAsync();
+                if (message == null)
+                    return new ErrorResult("Message not found.", ErrorType.NotFound);
+
+                return new SuccessDataResult<MessageModel>("Message retrieved successfully.", message);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred while retrieving private messages by IDs.");
-                return new ErrorResult("An error occurred while retrieving private messages.", ErrorType.ServerError);
+                _logger.LogError(ex, "An error occurred while retrieving the message with ID {MessageId}.", messageId);
+                return new ErrorResult("An error occurred while retrieving the chat.", ErrorType.ServerError);
             }
         }
 
-        public async Task<ResultModel> GetGroupMessagesByIds(List<ObjectId> messageIds)
+        public async Task<ResultModel> GetMessagesByIds(List<ObjectId> messageIds)
         {
             try
             {
-                var filter = Builders<GroupMessage>.Filter.In(m => m.Id, messageIds);
-                var groupMessages = await _groupMessagesCol.Find(filter).ToListAsync();
-                _logger.LogInformation("{Count} group messages retrieved successfully.", groupMessages.Count);
-                return new SuccessDataResult<List<GroupMessage>>("Group messages retrieved successfully.", groupMessages);
+                var filter = Builders<MessageModel>.Filter.In(m => m.Id, messageIds);
+                var messages = await _messageCollection.Find(filter).ToListAsync();
+                _logger.LogInformation("{Count} messages retrieved successfully.", messages.Count);
+                return new SuccessDataResult<List<MessageModel>>("Messages retrieved successfully.", messages);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred while retrieving group messages by IDs.");
-                return new ErrorResult("An error occurred while retrieving group messages.", ErrorType.ServerError);
+                _logger.LogError(ex, "An error occurred while retrieving messages by IDs.");
+                return new ErrorResult("An error occurred while retrieving messages.", ErrorType.ServerError);
             }
+        }
+
+        public async Task<ResultModel> GetMessageDetailsAsync(List<ObjectId> messageId)
+        {
+            try
+            {
+                var messageResult = await GetMessagesByIds(messageId);
+                if (messageResult is SuccessDataResult<List<MessageModel>> success)
+                {
+                    var messages = success.Data;
+                    var detailsList = new List<MessageDetailsRespone>();
+                    foreach (var message in messages)
+                    {
+                        var details = new MessageDetailsRespone
+                        {
+                            MessageId = message.Id.ToString(),
+                            Content = message.Content,
+                            ReadStatus = message.ReadStatus,
+                            SenderFullname = await GetMessageSenderFullname(message.SenderId),
+                            SentAt = message.SentAt,
+                        };
+                        detailsList.Add(details);
+                    }
+                    
+                    return new SuccessDataResult<List<MessageDetailsRespone>>("Message details retrieved", detailsList);
+                }
+                return messageResult;       // return error 
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while retrieving details of messages.");
+                return new ErrorResult("An error occurred while retrieving details of messages.", ErrorType.ServerError);
+            }
+
+        }
+        private async Task<string> GetMessageSenderFullname(string senderId)
+        {            
+            var userResult = await _userRepository.GetUserById(senderId);
+            if (userResult is SuccessDataResult<UserModel> success)
+                return success.Data.FullName;
+            return "No user found";
         }
         public async Task<ResultModel> SaveNewMessage(MessageModel message)
         {
             try
             {
-                if(message is PrivateMessage privateMessage)
-                {
-                    await _privateMessagesCol.InsertOneAsync(privateMessage);
-                    return new SuccessResult("Message saved successfully.");
-                }
-                else if(message is GroupMessage groupMessage)
-                {
-                    await _groupMessagesCol.InsertOneAsync(groupMessage);
-                    return new SuccessResult("Message saved successfully.");
-                }
-                return new ErrorResult("Failed to save the message");
+                await _messageCollection.InsertOneAsync(message);
+                return new SuccessResult("Message saved successfully.");
             }
             catch (Exception ex)
             {
@@ -75,33 +109,47 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> UpdateReadStatusOfMessage(MessageModel message)
+        public async Task<ResultModel> UpdateReadStatusOfMessage(ObjectId messageId, bool isRead)
         {
-            if(message is PrivateMessage privateMessage)
+            try
             {
-                var filter = Builders<PrivateMessage>.Filter.Eq(m => m.Id, privateMessage.Id);
-                var update = Builders<PrivateMessage>.Update.Set(m => m.ReadStatus, privateMessage.ReadStatus);
-
-                var result = await _privateMessagesCol.UpdateOneAsync(filter, update);
-                if (result.ModifiedCount > 0)
+                var messageResult= await GetMessagesByIds(new List<ObjectId> { messageId });
+                if(messageResult is SuccessDataResult<List<MessageModel>> successResult)
                 {
-                    return new SuccessResult("Message read status updated.");
+                    var message= successResult.Data.FirstOrDefault();
+                    if (message == null)
+                    {
+                        return new ErrorResult("Message not found.");
+                    }
+                    message.ReadStatus = isRead;
+                    return await UpdateMessage(message);
                 }
-                return new ErrorResult("Failed to update message.");
+                return new ErrorResult("Failed to fetch the message.");
             }
-            if (message is GroupMessage groupMessage) 
+            catch (Exception ex)
             {
-                var filter = Builders<GroupMessage>.Filter.Eq(m => m.Id, groupMessage.Id);
-                var update = Builders<GroupMessage>.Update.Set(m => m.ReadStatus, groupMessage.ReadStatus);
-
-                var result = await _groupMessagesCol.UpdateOneAsync(filter, update);
-                if (result.ModifiedCount > 0)
-                {
-                    return new SuccessResult("Group message read status updated.");
-                }
-                return new ErrorResult("Failed to update message.");
+                _logger.LogError(ex, "An error occurred while updating the read status.");
+                return new ErrorResult("An error occurred while updating the read status.");
             }
-            return new ErrorResult("Failed to update message.");
+
+        }
+        public async Task<ResultModel> UpdateMessage(MessageModel message)
+        {
+            try
+            {
+                var filter = Builders<MessageModel>.Filter.Eq(m => m.Id, message.Id);
+                var updateResult = await _messageCollection.ReplaceOneAsync(filter, message);
+                if (updateResult.IsAcknowledged && updateResult.ModifiedCount > 0)
+                {
+                    return new SuccessResult("Message updated successfully.");
+                }
+                return new ErrorResult("Failed to update the message.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while updating the message.");
+                return new ErrorResult("An error occurred while updating the message.");
+            }
         }
 
 

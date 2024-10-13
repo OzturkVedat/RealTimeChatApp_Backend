@@ -9,17 +9,16 @@ namespace RealTimeChatApp.API.Models
     {
         public ObjectId Id { get; set; }
         public List<string> ParicipantIds { get; set; } 
-        public string ChatTitle {  get; set; }
-        public ObjectId LastMessageId { get; set; } 
+        public string LastMessageContent { get; set; } 
         public ChatType Type { get; set; }
         public List<ObjectId> MessageIds { get; set; }
 
-        public ChatModel(string chatTitle, List<string> userIds)
+        public ChatModel(List<string> userIds)
         {
-            ChatTitle = chatTitle;
             ParicipantIds = userIds;
             Type = userIds.Count > 2 ? ChatType.Group : ChatType.Private;     // determine type based on number of users
             MessageIds = new List<ObjectId>();
+            LastMessageContent = "No messages sent yet.";
         }
     }
     public enum ChatType

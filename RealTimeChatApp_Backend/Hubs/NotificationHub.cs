@@ -8,7 +8,7 @@ using RealTimeChatApp.API.Models;
 
 namespace RealTimeChatApp.API.Hubs
 {
-    [Authorize(AuthenticationSchemes =JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class NotificationHub : Hub
     {
         private readonly IChatRepository _chatRepository;
@@ -62,56 +62,11 @@ namespace RealTimeChatApp.API.Hubs
             }
         }
 
-        public async Task MarkPrivateAsRead(ObjectId messageId, string recipentId)
+        public async Task MarkPrivateMessageAsRead(ObjectId messageId)
         {
-            var idList = new List<ObjectId> { messageId };
-            var messageResult = await _messageRepository.GetPrivateMessagesByIds(idList);
-            if (messageResult is SuccessDataResult<List<PrivateMessage>> successResult)
-            {
-                if (!successResult.Data.Any())
-                {
-                    await Clients.Caller.SendAsync("ReceiveErrorMessage", "Message not found.");
-                    return;
-                }
-                var message = successResult.Data.First();
-                if (message.RecipientId == recipentId && !message.ReadStatus)
-                {
-                    message.ReadStatus = true;
-                    await _messageRepository.UpdatePrivateMessage(message);
-
-                    // Notify the sender that the message has been read
-                    await Clients.User(message.SenderId).SendAsync("ReceivePrivateMessageRead", messageId.ToString(), recipentId);
-                }
-            }
-            else
-                await Clients.Caller.SendAsync("ReceiveErrorMessage", messageResult.Message);
-
+            await _messageRepository.UpdateReadStatusOfMessage(messageId, true);
+            return;
         }
 
-        public async Task MarkGroupAsRead(ObjectId messageId, string userId)
-        {
-            var idList = new List<ObjectId> { messageId };
-            var messageResult = await _messageRepository.GetGroupMessagesByIds(idList);
-            if (messageResult is SuccessDataResult<List<GroupMessage>> successResult)
-            {
-                if (!successResult.Data.Any())
-                {
-                    await Clients.Caller.SendAsync("ReceiveErrorMessage", "Message not found.");
-                    return;
-                }
-                var message = successResult.Data.First();
-                if (message.RecipientIds.Contains(userId) && message.ReadStatus.ContainsKey(userId) && !message.ReadStatus[userId])
-                {
-                    message.ReadStatus[userId] = true;
-                    await _messageRepository.UpdateGroupMessage(message);
-
-                    // Notify all users in the group that the message has been read by this user
-                    await Clients.Group(message.Id.ToString()).SendAsync("ReceiveGroupMessageRead", messageId.ToString(), userId);
-                }
-            }
-            else
-                await Clients.Caller.SendAsync("ReceiveErrorMessage", messageResult.Message);
-
-        }
     }
 }

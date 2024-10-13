@@ -165,23 +165,20 @@ namespace RealTimeChatApp.API.Repository
                     _logger.LogWarning("User not found for the given email: {Email}.", email);
                     return new ErrorResult("User not found for the given email.", ErrorType.NotFound);
                 }
-
                 var currentUserResult = await GetUserById(userId);
                 if (!currentUserResult.IsSuccess)
                     return currentUserResult; // Return the error from GetUserById if the user is not found.
 
                 var currentUser = ((SuccessDataResult<UserModel>)currentUserResult).Data;
-
                 if (!currentUser.FriendsListIds.Contains(friendUser.Id))
                 {
                     currentUser.FriendsListIds.Add(friendUser.Id);
-                    await UpdateUser(currentUser);
-
                     friendUser.FriendsListIds.Add(currentUser.Id);
-                    await UpdateUser(friendUser);
+
+                    await Task.WhenAll(UpdateUser(currentUser), UpdateUser(friendUser));
 
                     _logger.LogInformation("Friend with ID {FriendId} added to user with ID {UserId}.", friendUser.Id, userId);
-                    return new SuccessResult("Friend added.");
+                    return new SuccessDataResult<string>("Friend with the ID added:", friendUser.Id);
                 }
 
                 _logger.LogWarning("User with ID {UserId} already has friend with ID {FriendId} on their friends list.", userId, friendUser.Id);
