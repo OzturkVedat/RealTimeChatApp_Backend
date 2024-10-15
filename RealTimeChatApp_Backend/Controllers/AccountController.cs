@@ -29,6 +29,7 @@ namespace RealTimeChatApp.API.Controllers
             _jwtService = jwtService;
         }
 
+
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
@@ -48,7 +49,6 @@ namespace RealTimeChatApp.API.Controllers
                 FriendsListIds = new List<string>(),
                 ChatIds = new List<MongoDB.Bson.ObjectId>(),
                 isOnline = false,
-                isTyping = false,
             };
             var result = await _userManager.CreateAsync(newUser, request.Password);
             if (!result.Succeeded)

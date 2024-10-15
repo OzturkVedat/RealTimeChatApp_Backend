@@ -25,6 +25,17 @@ namespace RealTimeChatApp.API.Controllers
             _messageRepository = messageRepository;
         }
 
+        [HttpGet("user-id")]
+        public IActionResult GetAuthenticatedUserId()
+        {
+            var userIdClaim= User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized(new ErrorResult("User not authenticated."));
+            }
+            return Ok(new SuccessDataResult<string>("User ID successfully retrieved.",userIdClaim.Value));
+        }
+
         [HttpGet("user-details")]
         public async Task<IActionResult> GetAuthenticatedUserDetails()
         {
@@ -54,15 +65,14 @@ namespace RealTimeChatApp.API.Controllers
             if (chatIdsResult is SuccessDataResult<List<ObjectId>> successResult)
             {
                 var detailsList = new List<ChatDetailsResponse>();
-                var tasks = successResult.Data.Select(async chatId =>
+                foreach (var chatId in successResult.Data)
                 {
                     var result = await _chatRepository.GetChatDetailsAsync(chatId, userIdClaim.Value);
                     if (result is SuccessDataResult<ChatDetailsResponse> successDetails)
                     {
                         detailsList.Add(successDetails.Data);
                     }
-                });
-                await Task.WhenAll(tasks);
+                }
                 return Ok(new SuccessDataResult<List<ChatDetailsResponse>>("Successfully fetched the details.", detailsList));
             }
             return BadRequest(chatIdsResult);

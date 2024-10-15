@@ -21,17 +21,6 @@ namespace RealTimeChatApp.API.Hubs
             _messageRepository = messageRepository;
         }
 
-        public async Task GetAuthenticatedUserId()
-        {
-            var userId = Context.UserIdentifier;
-            if (userId == null)
-            {
-                await Clients.Caller.SendAsync("ReceiveErrorMessage", "User not authenticated.");
-                return;
-            }
-            await Clients.Caller.SendAsync("ReceiveAuthenticatedUserId", userId);
-        }
-
         public async Task GetFriendsOnlineStatus()
         {
             var userId = Context.UserIdentifier;

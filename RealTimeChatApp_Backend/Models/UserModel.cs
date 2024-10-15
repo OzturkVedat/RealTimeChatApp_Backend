@@ -15,7 +15,6 @@ namespace RealTimeChatApp.API.Models
         public List<ObjectId> ChatIds { get; set; } = new List<ObjectId>();
         public List<string> FriendsListIds { get; set; }= new List<string>();
         public bool isOnline {  get; set; }
-        public bool isTyping {  get; set; }
         [BsonIgnoreIfNull]
         public RefreshToken RefreshToken { get; set; }
 

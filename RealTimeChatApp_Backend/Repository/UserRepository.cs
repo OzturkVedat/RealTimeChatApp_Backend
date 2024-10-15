@@ -68,13 +68,12 @@ namespace RealTimeChatApp.API.Repository
             try
             {
                 var userResult = await GetUserById(userId);
-                if (!userResult.IsSuccess)
-                    return userResult;
-
-                var user = ((SuccessDataResult<UserModel>)userResult).Data;
-                var chatIds = user?.ChatIds?.ToList() ?? new List<ObjectId>();      // return empty list instead of null exception
-
-                return new SuccessDataResult<List<ObjectId>>("Successfully fetched the last user chat IDs", chatIds);
+                if(userResult is SuccessDataResult<UserModel> success)
+                {
+                    var chatIds= success.Data.ChatIds.ToList();
+                    return new SuccessDataResult<List<ObjectId>>("Successfully fetched the last user chat IDs", chatIds);
+                }
+                return userResult;      // errors
             }
             catch (Exception ex)
             {
