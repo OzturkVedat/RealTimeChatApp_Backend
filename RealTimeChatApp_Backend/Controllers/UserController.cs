@@ -28,12 +28,12 @@ namespace RealTimeChatApp.API.Controllers
         [HttpGet("user-id")]
         public IActionResult GetAuthenticatedUserId()
         {
-            var userIdClaim= User.FindFirst(ClaimTypes.NameIdentifier);
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
             {
                 return Unauthorized(new ErrorResult("User not authenticated."));
             }
-            return Ok(new SuccessDataResult<string>("User ID successfully retrieved.",userIdClaim.Value));
+            return Ok(new SuccessDataResult<string>("User ID successfully retrieved.", userIdClaim.Value));
         }
 
         [HttpGet("user-details")]
@@ -61,18 +61,24 @@ namespace RealTimeChatApp.API.Controllers
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
-            var chatIdsResult = await _userRepository.GetUserChatIds(userIdClaim.Value);
+            var chatIdsResult = await _userRepository.GetUserIdsByType(userIdClaim.Value, "chatIds");
             if (chatIdsResult is SuccessDataResult<List<ObjectId>> successResult)
             {
+                var chatDetailsTasks = successResult.Data.Select(chatId =>
+                _chatRepository.GetPrivateChatDetails(chatId, userIdClaim.Value)).ToList();
+                var chatDetailsResults = await Task.WhenAll(chatDetailsTasks);
+
+                var errors = new List<ErrorResult>();
                 var detailsList = new List<ChatDetailsResponse>();
-                foreach (var chatId in successResult.Data)
+                foreach (var result in chatDetailsResults)
                 {
-                    var result = await _chatRepository.GetChatDetailsAsync(chatId, userIdClaim.Value);
-                    if (result is SuccessDataResult<ChatDetailsResponse> successDetails)
-                    {
-                        detailsList.Add(successDetails.Data);
-                    }
+                    if (result is SuccessDataResult<ChatDetailsResponse> success)
+                        detailsList.Add(success.Data);
+                    else errors.Add(new ErrorResult($"Failed to fetch details: {result.Message}"));
+
                 }
+                if (errors.Any()) return BadRequest(errors);
+
                 return Ok(new SuccessDataResult<List<ChatDetailsResponse>>("Successfully fetched the details.", detailsList));
             }
             return BadRequest(chatIdsResult);
@@ -85,7 +91,7 @@ namespace RealTimeChatApp.API.Controllers
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
-            var friendIdsResult = await _userRepository.GetUserFriendIds(userIdClaim.Value);
+            var friendIdsResult = await _userRepository.GetUserIdsByType(userIdClaim.Value, "friendIds");
             if (friendIdsResult is SuccessDataResult<List<string>> successResult)
             {
                 var friendNamesResult = await _userRepository.GetUserFriendsFullnames(successResult.Data);
@@ -99,27 +105,20 @@ namespace RealTimeChatApp.API.Controllers
                 return BadRequest(errorResult);
             }
         }
-
         [HttpGet("friend-online-status")]
-        public async Task<IActionResult> GetFriendOnlineStatus()
+        public async Task<IActionResult> GetFriendsOnlineStatus()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
-            var friendIdsResult = await _userRepository.GetUserFriendIds(userIdClaim.Value);
+            var friendIdsResult = await _userRepository.GetUserIdsByType(userIdClaim.Value, "friendIds");
             if (friendIdsResult is SuccessDataResult<List<string>> successResult)
             {
-                var friendStatus = await _userRepository.GetUserFriendsOnlineStatus(successResult.Data);
-                return friendStatus.IsSuccess ? Ok(friendStatus) : BadRequest(friendStatus);
+                var onlineStatusResult = await _userRepository.GetUserFriendsOnlineStatus(successResult.Data);
+                    return onlineStatusResult.IsSuccess ? Ok(onlineStatusResult): BadRequest(onlineStatusResult);
             }
-            else
-            {
-                var errorResult = friendIdsResult as ErrorResult;
-                if (errorResult.Type == ErrorType.NotFound)
-                    return NotFound(errorResult);
-                return BadRequest(errorResult);
-            }
+            else return BadRequest(friendIdsResult);
         }
 
         [HttpPost("add-friend")]
@@ -139,7 +138,7 @@ namespace RealTimeChatApp.API.Controllers
                 if (errorResult.Type == ErrorType.Conflict) return Conflict(errorResult);
                 return BadRequest(errorResult);
             }
-            if (addFriendResult is SuccessDataResult<string> friendIdResult)
+            else if (addFriendResult is SuccessDataResult<string> friendIdResult)
             {
                 var chatters = new List<string> { userIdClaim.Value, friendIdResult.Data };
                 var newChat = new ChatModel(chatters);      // create a new chat with this friend right away
@@ -150,14 +149,14 @@ namespace RealTimeChatApp.API.Controllers
 
         private async Task<IActionResult> CreateNewPrivateChat(ChatModel chat)
         {
-            var saveChatResult = await _chatRepository.SaveChat(chat);
+            var saveChatResult = await _chatRepository.SavePrivateChat(chat);
             if (!saveChatResult.IsSuccess)
                 return BadRequest(saveChatResult);
 
             var addChatResults = new List<ResultModel>();
-            foreach (var id in chat.ParicipantIds)
+            foreach (var id in chat.ParticipantIds)
             {
-                var result = await _userRepository.AddUserChatById(id, chat.Id);
+                var result = await _userRepository.AddUserPrivateChatById(id, chat.Id);
                 addChatResults.Add(result);
             }
             foreach (var result in addChatResults)
@@ -169,7 +168,7 @@ namespace RealTimeChatApp.API.Controllers
                     return BadRequest(errorResult); // Handle other errors
                 }
             }
-            return Ok(new SuccessResult("Chat added successfully."));
+            return Ok(new SuccessResult("Chat created for this user."));
         }
 
     }

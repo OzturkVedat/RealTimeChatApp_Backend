@@ -12,11 +12,6 @@ namespace RealTimeChatApp.API.DTOs.RequestModels
         [StringLength(50, MinimumLength = 6, ErrorMessage = "Password must be at least 6 characters")]
         public string Password { get; set; } = string.Empty;
     }
-    public class LoginResponse
-    {
-        public string UserId { get; set; }
-        public string AccessToken { get; set; }
-        public string RefreshToken { get; set; }
-    }
+    
 
 }

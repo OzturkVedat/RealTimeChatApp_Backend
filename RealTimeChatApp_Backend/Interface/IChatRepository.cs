@@ -6,11 +6,11 @@ namespace RealTimeChatApp.API.Interface
 {
     public interface IChatRepository
     {
-        Task<ResultModel> GetChatById(ObjectId chatId);
-        Task<ResultModel> GetChatsByIds(List<ObjectId> ids);
-        Task<ResultModel> GetChatDetailsAsync(ObjectId chatId, string currentUserId);
-        Task<ResultModel> SaveChat(ChatModel chat);
-        Task<ResultModel> AddMessageToChat(ObjectId chatId, MessageModel messageId);
-        Task<ResultModel> UpdateChat(ChatModel chat);
+        Task<ResultModel> GetPrivateChatById(ObjectId chatId);
+        Task<ResultModel> GetPrivateChatsByIds(List<ObjectId> ids);
+        Task<ResultModel> GetPrivateChatDetails(ObjectId chatId, string currentUserId);
+        Task<ResultModel> SavePrivateChat(ChatModel chat);
+        Task<ResultModel> AddMessageToPrivateChat(ObjectId chatId, MessageModel messageId);
+        Task<ResultModel> UpdatePrivateChat(ChatModel chat);
     }
 }

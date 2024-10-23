@@ -14,7 +14,7 @@ namespace RealTimeChatApp.API.Services
     {
         ResultModel GenerateJwtToken(IEnumerable<Claim> claims);
         Task<ResultModel> GenerateRefreshToken(string userId);
-        Task<ResultModel> ValidateRefreshToken(string userId, string refreshToken);
+        Task<ResultModel> ValidateRefreshToken(string refreshToken);
         Task<ResultModel> RevokeRefreshToken(string userId);
     }
 
@@ -47,12 +47,7 @@ namespace RealTimeChatApp.API.Services
         {
             var newToken = Guid.NewGuid().ToString(); // Generate a new refresh token
             var filter = Builders<UserModel>.Filter.Eq(u => u.Id, userId);
-            var update = Builders<UserModel>.Update.Set(u => u.RefreshToken, new RefreshToken
-            {
-                Token = newToken,
-                ExpiryDate = DateTime.UtcNow.AddDays(7),
-                IsRevoked = false
-            });
+            var update = Builders<UserModel>.Update.Set(u => u.RefreshToken, new RefreshToken());
 
             var result = await _usersCollection.UpdateOneAsync(filter, update);
             if (result.ModifiedCount > 0)
@@ -61,32 +56,32 @@ namespace RealTimeChatApp.API.Services
             return new ErrorResult("Error while generating the refresh token.");
         }
 
-        public async Task<ResultModel> ValidateRefreshToken(string userId, string refreshToken)
+        public async Task<ResultModel> ValidateRefreshToken(string refreshToken)
         {
             var filter = Builders<UserModel>.Filter.And(
-                Builders<UserModel>.Filter.Eq(u => u.Id, userId),
                 Builders<UserModel>.Filter.Eq(u => u.RefreshToken.Token, refreshToken),
                 Builders<UserModel>.Filter.Eq(u => u.RefreshToken.IsRevoked, false),
                 Builders<UserModel>.Filter.Gt(u => u.RefreshToken.ExpiryDate, DateTime.UtcNow)
             );
-
             var user = await _usersCollection.Find(filter).FirstOrDefaultAsync();
             if (user != null)
-            {
-                return new SuccessResult("Refresh token is valid.");
-            }
+                return new SuccessDataResult<string>("Refresh token is validated for the user.", user.Id);
+            
             return new ErrorResult("Invalid or expired refresh token.");
         }
-        public async Task<ResultModel> RevokeRefreshToken(string userId)     // for log out
+
+        public async Task<ResultModel> RevokeRefreshToken(string userId) // For logout
         {
+            if (string.IsNullOrEmpty(userId))
+                return new ErrorResult("Invalid user ID.");
+
             var filter = Builders<UserModel>.Filter.Eq(u => u.Id, userId);
             var update = Builders<UserModel>.Update.Set(u => u.RefreshToken.IsRevoked, true);
-            var result = await _usersCollection.UpdateOneAsync(filter, update);
 
-            if (result.ModifiedCount > 0)
-            {
+            var result = await _usersCollection.UpdateOneAsync(filter, update);
+            if (result.IsAcknowledged && result.ModifiedCount > 0)
                 return new SuccessResult("Successfully revoked the requested token.");
-            }
+
             return new ErrorResult("Error while revoking the requested token.");
         }
 

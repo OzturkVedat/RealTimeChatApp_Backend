@@ -1,10 +1,14 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using MongoDB.Bson;
 using RealTimeChatApp.API.DTOs.RequestModels;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.Services;
+using RealTimeChatApp.API.ViewModels.RequestModels;
+using RealTimeChatApp.API.ViewModels.ResultModels;
 using System.Security.Claims;
 
 namespace RealTimeChatApp.API.Controllers
@@ -17,11 +21,8 @@ namespace RealTimeChatApp.API.Controllers
         private readonly SignInManager<UserModel> _signInManager;
         private readonly IUserRepository _userRepository;
         private readonly IJwtService _jwtService;
-
-        public AccountController(UserManager<UserModel> userManager,
-                                 SignInManager<UserModel> signInManager,
-                                 IUserRepository userRepository,
-                                 IJwtService jwtService)
+        public AccountController(UserManager<UserModel> userManager, SignInManager<UserModel> signInManager,
+                                 IUserRepository userRepository, IJwtService jwtService)
         {
             _userManager = userManager;
             _signInManager = signInManager;
@@ -42,13 +43,11 @@ namespace RealTimeChatApp.API.Controllers
 
             var newUser = new UserModel
             {
-                UserName = request.Email,  //  username is set as email for login purposes
-                Email = request.Email,
                 FullName = request.FullName,
-                StatusMessage = "Hi, I'm Dominic Reyes.",
-                FriendsListIds = new List<string>(),
-                ChatIds = new List<MongoDB.Bson.ObjectId>(),
-                isOnline = false,
+                Email = request.Email,
+                UserName = request.Email,
+                StatusMessage = "Hello there!",
+                IsOnline = false,
             };
             var result = await _userManager.CreateAsync(newUser, request.Password);
             if (!result.Succeeded)
@@ -83,13 +82,13 @@ namespace RealTimeChatApp.API.Controllers
             var claims = await _userManager.GetClaimsAsync(user);
 
             var jwtResult = _jwtService.GenerateJwtToken(claims) as SuccessDataResult<string>;
-            var refreshTokenResult = await _jwtService.GenerateRefreshToken(user.Id.ToString()) as SuccessDataResult<string>;
+            var refreshTokenResult = await _jwtService.GenerateRefreshToken(user.Id) as SuccessDataResult<string>;
 
             if (jwtResult != null && refreshTokenResult != null)
             {
                 var response = new LoginResponse
                 {
-                    UserId = user.Id,
+                    FullName = user.FullName,
                     AccessToken = jwtResult.Data,
                     RefreshToken = refreshTokenResult.Data
                 };
@@ -98,6 +97,54 @@ namespace RealTimeChatApp.API.Controllers
             }
             return BadRequest(new ErrorResult("Error while trying to log in the user."));
 
+        }
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        {
+            if (ModelState.IsValid)
+                return BadRequest(new ErrorDataResult("Invalid request", ModelState.GetErrors()));
+
+            var userIdResult = await _jwtService.ValidateRefreshToken(request.RefreshToken);
+            if (userIdResult is SuccessDataResult<string> userId)
+            {
+                if (string.IsNullOrEmpty(userId.Data))
+                    return Unauthorized(new ErrorResult("Invalid refresh token."));
+
+                var user = await _userManager.FindByIdAsync(userId.Data);
+                if (user == null)
+                    return Unauthorized(new ErrorResult("User not found."));
+
+                var claims = await _userManager.GetClaimsAsync(user);
+                var jwtResult = _jwtService.GenerateJwtToken(claims) as SuccessDataResult<string>;
+                if (jwtResult != null)
+                {
+                    var response = new LoginResponse
+                    {
+                        FullName = user.FullName,
+                        AccessToken = jwtResult.Data,
+                        RefreshToken = request.RefreshToken
+                    };
+
+                    return Ok(new SuccessDataResult<LoginResponse>("Access token refreshed successfully.", response));
+                }
+                return BadRequest(new ErrorResult("Error while trying to refresh the token."));
+            }
+            else
+                return BadRequest(userIdResult);    // pass the error from the service
+        }
+
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+                return Unauthorized(new ErrorResult("User not authenticated."));
+
+            var revokeResult = await _jwtService.RevokeRefreshToken(userIdClaim.Value);
+            if (revokeResult.IsSuccess)
+                return Ok(new SuccessResult("Successfully logged out."));
+            else
+                return BadRequest(new ErrorResult("Error while logging out."));
         }
 
     }

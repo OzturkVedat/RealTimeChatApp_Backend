@@ -4,6 +4,10 @@ using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using RealTimeChatApp.API.ViewModels.ResultModels;
 
 namespace RealTimeChatApp.API.Repository
@@ -24,136 +28,129 @@ namespace RealTimeChatApp.API.Repository
             _logger = logger;
         }
 
-        public async Task<ResultModel> GetChatById(ObjectId id)
+        public async Task<ResultModel> GetPrivateChatById(ObjectId id)
         {
             try
             {
                 var chat = await _chatsCollection.Find(c => c.Id == id).FirstOrDefaultAsync();
-                if (chat == null)
-                {
-                    _logger.LogWarning("Chat with ID {ChatId} not found.", id);
-                    return new ErrorResult("Chat not found.", ErrorType.NotFound);
-                }
-                _logger.LogInformation("Chat with ID {ChatId} retrieved successfully.", id);
-                return new SuccessDataResult<ChatModel>("Chat retrieved successfully.", chat);
+                return chat == null
+                    ? new ErrorResult("Chat not found.", ErrorType.NotFound)
+                    : new SuccessDataResult<ChatModel>("Chat retrieved successfully.", chat);
             }
-            catch (Exception ex)
+            catch (MongoException ex)
             {
-                _logger.LogError(ex, "An error occurred while retrieving the chat with ID {ChatId}.", id);
-                return new ErrorResult("An error occurred while retrieving the chat.", ErrorType.ServerError);
+                _logger.LogError(ex, "An error occurred while fetching the private chat.");
+                return new ErrorResult("An error occurred while retrieving the requested chat.", ErrorType.ServerError);
             }
         }
 
-        public async Task<ResultModel> GetChatsByIds(List<ObjectId> ids)
+        public async Task<ResultModel> GetPrivateChatsByIds(List<ObjectId> ids)
         {
             try
             {
                 var filter = Builders<ChatModel>.Filter.In(c => c.Id, ids);
                 var chats = await _chatsCollection.Find(filter).ToListAsync();
-                _logger.LogInformation("{Count} chats retrieved successfully.", chats.Count);
                 return new SuccessDataResult<List<ChatModel>>("Chats retrieved successfully.", chats);
             }
-            catch (Exception ex)
+            catch (MongoException ex)
             {
-                _logger.LogError(ex, "An error occurred while retrieving chats by IDs.");
-                return new ErrorResult("An error occurred while retrieving chats.");
+                _logger.LogError(ex, "An error occurred while retrieving chats by IDs: {ChatIds}.", string.Join(", ", ids));
+                return new ErrorResult("An error occurred while retrieving chats by IDs.", ErrorType.ServerError);
             }
         }
-        public async Task<ResultModel> GetChatDetailsAsync(ObjectId chatId, string currentUserId)
+
+        public async Task<ResultModel> GetPrivateChatDetails(ObjectId chatId, string currentUserId)
         {
-            var chatResult = await GetChatById(chatId);
-            if (!chatResult.IsSuccess)
-                return chatResult;
-
-            if (chatResult is SuccessDataResult<ChatModel> success)
+            try
             {
-                var chat = success.Data;
+                var chatResult = await GetPrivateChatById(chatId);
+                if (!chatResult.IsSuccess)
+                    return chatResult;
 
-                var recipientFullname = await GetChatRecipientFullname(chat, currentUserId);
-
-                var chatDetails = new ChatDetailsResponse
+                if (chatResult is SuccessDataResult<ChatModel> success)
                 {
-                    ChatId = chat.Id.ToString(),
-                    LastMessage = chat.LastMessageContent,
-                    RecipientFullname = recipientFullname
-                };
+                    var recipientFullname = await GetChatRecipientFullname(success.Data, currentUserId);
+                    var chatDetails = new ChatDetailsResponse
+                    {
+                        ChatId = success.Data.Id.ToString(),
+                        LastMessage = success.Data.LastMessageContent,
+                        LastMessageSender=success.Data.LastMessageSenderFullname,
+                        RecipientFullname = recipientFullname
+                    };
+                    return new SuccessDataResult<ChatDetailsResponse>("Successfully fetched the chat details.", chatDetails);
+                }
 
-                return new SuccessDataResult<ChatDetailsResponse>("Successfully fetched the chat details.", chatDetails);
+                return new ErrorResult("Error while fetching chat details.");
             }
-            return new ErrorResult("Error while fetching chat details.");
+            catch (MongoException ex)
+            {
+                _logger.LogError(ex, "An error occurred while retrieving chat details.");
+                return new ErrorResult("An error occurred while retrieving chat details.", ErrorType.ServerError);
+            }
+
         }
 
         private async Task<string> GetChatRecipientFullname(ChatModel chat, string currentUserId)
         {
-            var idList = chat.ParicipantIds.Where(id => id != currentUserId).ToList();
-            if (!idList.Any())
+            var recipientId = chat.ParticipantIds.FirstOrDefault(id => id != currentUserId);
+            if (string.IsNullOrEmpty(recipientId))
                 return "No user found";
 
-            var userResult = await _userRepository.GetUserById(idList.First());
-            if (userResult is SuccessDataResult<UserModel> success)
-                return success.Data.FullName;
-
-            return "No user found";
+            var userResult = await _userRepository.GetUserById(recipientId);
+            return userResult is SuccessDataResult<UserModel> success ? success.Data.FullName : "No user found";
         }
 
-        public async Task<ResultModel> SaveChat(ChatModel chat)
+        public async Task<ResultModel> SavePrivateChat(ChatModel chat)
         {
             try
             {
                 await _chatsCollection.InsertOneAsync(chat);
                 return new SuccessResult("Chat saved successfully.");
             }
-            catch (Exception ex)
+            catch (MongoException ex)
             {
                 _logger.LogError(ex, "An error occurred while saving the chat.");
-                return new ErrorResult("An error occurred while saving the chat.");
+                return new ErrorResult("An error occurred while saving chat.", ErrorType.ServerError);
             }
         }
-        public async Task<ResultModel> AddMessageToChat(ObjectId chatId, MessageModel message)
+
+        public async Task<ResultModel> AddMessageToPrivateChat(ObjectId chatId, MessageModel message)
         {
             try
             {
                 var filter = Builders<ChatModel>.Filter.Eq(c => c.Id, chatId);
                 var update = Builders<ChatModel>.Update.AddToSet(c => c.MessageIds, message.Id)
-                                                      .Set(c => c.LastMessageContent, message.Content);
+                                                      .Set(c => c.LastMessageContent, message.Content)
+                                                      .Set(c => c.LastMessageSenderFullname, message.SenderFullname);
+
                 var updateResult = await _chatsCollection.UpdateOneAsync(filter, update);
 
-                if (updateResult.ModifiedCount > 0)
-                {
-                    _logger.LogInformation("Message with ID {MessageId} added to chat {ChatId}.", message.Id, chatId);
-                    return new SuccessResult("Message added to chat successfully.");
-                }
-                _logger.LogWarning("Chat with ID {ChatId} not found.", chatId);
-                return new ErrorResult("Chat not found.", ErrorType.NotFound);
+                return updateResult.ModifiedCount > 0
+                    ? new SuccessResult("Message added to chat successfully.")
+                    : new ErrorResult("Chat not found.", ErrorType.NotFound);
             }
-            catch (Exception ex)
+            catch (MongoException ex)
             {
-                _logger.LogError(ex, "An error occurred while adding message {MessageId} to chat {ChatId}.", message.Id, chatId);
+                _logger.LogError(ex, "An error occurred while adding the message to the chat with ID {ChatId}.", chatId);
                 return new ErrorResult("An error occurred while adding the message to the chat.", ErrorType.ServerError);
             }
         }
 
-        public async Task<ResultModel> UpdateChat(ChatModel chat)
+        public async Task<ResultModel> UpdatePrivateChat(ChatModel chat)
         {
             try
             {
                 var filter = Builders<ChatModel>.Filter.Eq(c => c.Id, chat.Id);
                 var updateResult = await _chatsCollection.ReplaceOneAsync(filter, chat);
 
-                if (updateResult.MatchedCount > 0)
-                {
-                    _logger.LogInformation("Chat with ID {ChatId} updated successfully.", chat.Id);
-                    return new SuccessResult("Chat updated successfully.");
-                }
-
-                _logger.LogWarning("Chat with ID {ChatId} not found.", chat.Id);
-                return new ErrorResult("Chat not found.", ErrorType.NotFound);
+                return updateResult.MatchedCount > 0
+                    ? new SuccessResult("Chat updated successfully.")
+                    : new ErrorResult("Chat not found.", ErrorType.NotFound);
             }
-            catch (Exception ex)
+            catch (MongoException ex)
             {
-                _logger.LogError(ex, "An error occurred while updating chat {ChatId}.", chat.Id);
-                return new ErrorResult("An error occurred while updating the chat.", ErrorType.ServerError);
-
+                _logger.LogError(ex, "An error occurred while updating chat with ID {ChatId}.", chat.Id);
+                return new ErrorResult($"An error occurred while updating the requested chat.", ErrorType.ServerError);
             }
         }
     }
