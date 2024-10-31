@@ -9,8 +9,11 @@ using Microsoft.OpenApi.Models;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
+using RealTimeChatApp.API.Data;
+using RealTimeChatApp.API.Data.UnitOfWork;
 using RealTimeChatApp.API.Hubs;
 using RealTimeChatApp.API.Interface;
+using RealTimeChatApp.API.Middleware;
 using RealTimeChatApp.API.Models;
 using RealTimeChatApp.API.Repository;
 using RealTimeChatApp.API.Services;
@@ -33,10 +36,6 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
-builder.Logging.ClearProviders();  // Clear default providers
-builder.Logging.AddConsole();      // Enable console logging
-builder.Logging.AddDebug();        // Enable debug logging
-builder.Logging.AddEventSourceLogger();
 
 // bson serializer, for storing as string
 BsonSerializer.RegisterSerializer(new GuidSerializer(MongoDB.Bson.BsonType.String));
@@ -47,7 +46,7 @@ var mongoDbSettings = builder.Configuration.GetSection("MongoDbSettings").Get<Mo
 
 // modifying connection pooling
 var mongoClientSettings = MongoClientSettings.FromConnectionString(mongoDbSettings.ConnectionString);
-mongoClientSettings.MaxConnectionPoolSize = 200;    // max number of connections
+mongoClientSettings.MaxConnectionPoolSize = 200;
 mongoClientSettings.MinConnectionPoolSize = 5;      // min idle connections
 mongoClientSettings.ConnectTimeout = TimeSpan.FromSeconds(10);
 
@@ -109,7 +108,8 @@ builder.Services.AddAuthentication(auth =>
             var accessToken = context.Request.Query["access_token"];
 
             var path = context.HttpContext.Request.Path;
-            if (!string.IsNullOrEmpty(accessToken) && ((path.StartsWithSegments("/hub/chat") || path.StartsWithSegments("/hub/group"))))
+            if (!string.IsNullOrEmpty(accessToken) &&
+            (path.StartsWithSegments("/hub/chat") || path.StartsWithSegments("/hub/group") || path.StartsWithSegments("/hub/search")))
             {
                 context.Token = accessToken;
             }
@@ -120,6 +120,7 @@ builder.Services.AddAuthentication(auth =>
 
 builder.Services.AddScoped<IJwtService, JwtService>();
 
+//builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -176,7 +177,17 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddScoped<Seeder>();
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<Seeder>();
+    await seeder.SeedAsync(); 
+}
+
+app.UseMiddleware<GlobalExceptionHandling>();   // for unexpected errors
 
 app.UseRateLimiter();
 
@@ -197,6 +208,7 @@ app.UseAuthorization();
 
 app.MapHub<ChatHub>("/hub/chat").RequireRateLimiting("FixedWindowPolicy");
 app.MapHub<GroupHub>("/hub/group").RequireRateLimiting("FixedWindowPolicy");
+app.MapHub<SearchHub>("/hub/search").RequireRateLimiting("FixedWindowPolicy");
 
 app.MapControllers();
 

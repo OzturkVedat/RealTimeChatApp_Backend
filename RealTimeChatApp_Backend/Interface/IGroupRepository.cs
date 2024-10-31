@@ -7,17 +7,17 @@ namespace RealTimeChatApp.API.Interface
 {
     public interface IGroupRepository
     {
-        Task<ResultModel> CheckUserRoleInGroup(string userId, ObjectId groupId);
+        Task<ResultModel> CheckUserRoleInGroupChat(string userId, ObjectId chatId);
         Task<ResultModel> GetGroupById(ObjectId groupId);
         Task<ResultModel> GetGroupDetails(List<ObjectId> groupIds);
-        Task<ResultModel> GetGroupMemberIds(ObjectId groupId);
-        Task<ResultModel> GetGroupMemberDetails(ObjectId groupId);
-        Task<ResultModel> GetGroupChat(ObjectId groupId);
+        Task<ResultModel> GetGroupMemberIds(ObjectId groupChatId);
+        Task<ResultModel> GetGroupMemberDetails(ObjectId groupChatId);
+        Task<ResultModel> GetGroupChat(ObjectId chatId);
         Task<ResultModel> GetGroupsChatIds(List<ObjectId> groupIds);
         Task<ResultModel> GetGroupMessageIds(ObjectId groupId);
         Task<ResultModel> CreateNewGroup(string adminId, AddGroupRequest request);
         Task<ResultModel> AddMemberToGroup(ObjectId groupId, string newMemberId);
-        Task<ResultModel> SaveMessageToGroupChat(ObjectId groupId, MessageModel newMessage);
+        Task<ResultModel> SaveMessageToGroupChat(ObjectId groupChatId, MessageModel newMessage);
         Task<ResultModel> UpdateGroupDetails(UpdateGroupRequest request);
         Task<ResultModel> ChangeAdminOfGroup(ObjectId groupId, string newAdminId);
         Task<ResultModel> KickMemberFromGroup(ObjectId groupId, string memberId);

@@ -1,95 +1,82 @@
-﻿//using Amazon.Runtime.Internal;
-//using MongoDB.Bson;
-//using MongoDB.Driver;
-//using RealTimeChatApp.API.Models;
-//using System.Collections.Generic;
-//using System.Linq;
-//using System.Threading.Tasks;
+﻿using Amazon.Runtime.Internal;
+using Microsoft.AspNetCore.Identity;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using RealTimeChatApp.API.Models;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
-//namespace RealTimeChatApp.API.Data
-//{
-//    public class Seeder
-//    {
-//        private readonly IMongoCollection<UserModel> _userCollection;
-//        private readonly IMongoCollection<ChatModel> _chatCollection;
-//        private readonly IMongoCollection<MessageModel> _messageCollection;
-//        private readonly IMongoCollection<GroupModel> _groupCollection;
+namespace RealTimeChatApp.API.Data
+{
+    public class Seeder
+    {
+        private readonly IMongoCollection<UserModel> _userCollection;
+        private readonly IMongoCollection<Superadmin> _superadminCollection;
+        private readonly UserManager<UserModel> _userManager;
 
-//        public Seeder(IMongoDatabase mongoDb)
-//        {
-//            _userCollection = mongoDb.GetCollection<UserModel>("users");
-//            _chatCollection = mongoDb.GetCollection<ChatModel>("chats");
-//            _messageCollection = mongoDb.GetCollection<MessageModel>("messages");
-//            _groupCollection = mongoDb.GetCollection<GroupModel>("groups");
-//        }
 
-//        public async Task SeedAsync()
-//        {
-//            // Seed Users
-//            if (!await _userCollection.AsQueryable().AnyAsync())
-//            {
-//                var users = new List<UserModel>
-//                {
-//                    new() { Id = "user1", FullName = "Kim Jung", Email = "jungkim@email.com",UserName="jungkim@email.com",
-//                        StatusMessage = "Hello there!", IsOnline = false },
-//                    new () { Id = "user2", FullName = "Miranda Keller", Email = "mirandak@email.com",UserName= "mirandak@email.com",
-//                        StatusMessage = "Hello there!", IsOnline = false },
-//                    new() { Id = "user3", FullName = "Jean Grouchy", Email = "grouchy@email.com",UserName="grouchy@email.com",
-//                        StatusMessage = "Hello there!", IsOnline = false },
-//                    new() { Id = "user4", FullName = "Sam Watson", Email = "samwat@email.com",UserName="samwat@email.com",
-//                        StatusMessage = "Hello there!", IsOnline = false },
-//                    new() { Id = "user5", FullName = "Marie Nova", Email = "mnova@email.com",UserName="mnova@email.com",
-//                        StatusMessage = "Hello there!", IsOnline = false },
-//                    new() { Id = "user6", FullName = "Van Damm", Email = "dammvan@email.com",UserName="dammvan@email.com",
-//                        StatusMessage = "Hello there!", IsOnline = false },
-//                    new() { Id = "user7", FullName = "Ed Almeida", Email = "almeida@email.com",UserName="almeida@email.com",
-//                        StatusMessage = "Hello there!", IsOnline = false },
-//                };
+        public Seeder(IMongoDatabase mongoDb, UserManager<UserModel> userManager)
+        {
+            _userCollection = mongoDb.GetCollection<UserModel>("users");
+            _superadminCollection = mongoDb.GetCollection<Superadmin>("superadmins");
+            _userManager = userManager;
+        }
 
-//                await _userCollection.InsertManyAsync(users);
-//            }
+        public async Task SeedAsync()
+        {
+            // Seed User
+            if (!await _userCollection.AsQueryable().AnyAsync())
+            {
+                var user = new UserModel
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    FullName = "Van Damme",
+                    Email = "dammevan@email.com",
+                    UserName = "dammevan@email.com",
+                    StatusMessage = "Moderating..",
+                    IsOnline = false,
+                    ProfilePictureUrl = "https://localhost:3000/van-damme.jpg"
+                };
+                var password = "damme123-";
+                var result = await _userManager.CreateAsync(user, password);
 
-//            if (!await _chatCollection.AsQueryable().AnyAsync())
-//            {
-//                var chats = new List<ChatModel>
-//                {
-//                    new (["user1","user2"]),
-//                    new(["user1","user3"]),
-//                    new(["user1","user5"]),
-//                    new(["user7","user6"]),
-//                    new(["user5","user2"]),
-//                    new(["user1","user5","user7","user3","user2"])  // group chat
-//                };
+                if (result.Succeeded)
+                {
+                    var claims = new List<Claim>
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, user.Id),
+                        new Claim(ClaimTypes.Email, user.Email)
+                    };
+                    await _userManager.AddClaimsAsync(user, claims);
+                }
+                else
+                {
+                    var errors = result.Errors.Select(e => e.Description).ToList();
+                    throw new Exception($"Failed to create seeded user: {string.Join(", ", errors)}");
+                }
+            }
 
-//                await _chatCollection.InsertManyAsync(chats);
-//            }
+            // Seed Superadmin
+            if (!await _superadminCollection.AsQueryable().AnyAsync())
+            {
+                var user = await _userCollection.Find(u => u.Email == "dammevan@email.com").FirstOrDefaultAsync();
+                if (user != null)
+                {
+                    var super = new Superadmin
+                    {
+                        UserId = user.Id,
+                        UserName = user.FullName,
+                    };
+                    await _superadminCollection.InsertOneAsync(super);
+                }
+                else
+                {
+                    throw new Exception("User not found for seeding superadmins.");
+                }
+            }
 
-//            if (!await _messageCollection.AsQueryable().AnyAsync())
-//            {
-//                var messages = new List<MessageModel>
-//                {
-//                    new ("user1",["user2"],"dont back up now"),
-//                    new ("user1",["user3"],"im coming"),
-//                    new ("user1",["user5"],"sure"),
-//                    new ("user7",["user6"],"yep"),
-//                    new ("user5",["user2"],"exactly")
-//                };
-
-//                await _messageCollection.InsertManyAsync(messages);
-//            }
-
-//            if (!await _groupCollection.AsQueryable().AnyAsync())
-//            {
-          
-//                var groups = new List<GroupModel>
-//                {
-//                    new GroupModel { GroupName = "Developers",Description= "School project", AdminId = "user1",
-//                    GroupChat()},
-//                    // Add more groups as needed
-//                };
-
-//                await _groupCollection.InsertManyAsync(groups);
-//            }
-//        }
-//    }
-//}
+        }
+    }
+}

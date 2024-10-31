@@ -69,13 +69,17 @@ namespace RealTimeChatApp.API.Repository
 
                 if (chatResult is SuccessDataResult<ChatModel> success)
                 {
-                    var recipientFullname = await GetChatRecipientFullname(success.Data, currentUserId);
+                    var recipient = await GetChatRecipient(success.Data, currentUserId);
+                    if(recipient == null)
+                        return new ErrorResult("Error while fetching chat details.");
+
                     var chatDetails = new ChatDetailsResponse
                     {
                         ChatId = success.Data.Id.ToString(),
                         LastMessage = success.Data.LastMessageContent,
                         LastMessageSender=success.Data.LastMessageSenderFullname,
-                        RecipientFullname = recipientFullname
+                        RecipientFullname = recipient.FullName,
+                        RecipientPictureUrl= recipient.ProfilePictureUrl
                     };
                     return new SuccessDataResult<ChatDetailsResponse>("Successfully fetched the chat details.", chatDetails);
                 }
@@ -90,14 +94,14 @@ namespace RealTimeChatApp.API.Repository
 
         }
 
-        private async Task<string> GetChatRecipientFullname(ChatModel chat, string currentUserId)
+        private async Task<UserModel?> GetChatRecipient(ChatModel chat, string currentUserId)
         {
             var recipientId = chat.ParticipantIds.FirstOrDefault(id => id != currentUserId);
             if (string.IsNullOrEmpty(recipientId))
-                return "No user found";
+                return null;
 
             var userResult = await _userRepository.GetUserById(recipientId);
-            return userResult is SuccessDataResult<UserModel> success ? success.Data.FullName : "No user found";
+            return userResult is SuccessDataResult<UserModel> success ? success.Data : null;
         }
 
         public async Task<ResultModel> SavePrivateChat(ChatModel chat)

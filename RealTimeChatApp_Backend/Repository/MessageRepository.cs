@@ -84,26 +84,6 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> UpdateReadStatusOfMessage(ObjectId messageId, bool isRead)
-        {
-            try
-            {
-                var messageResult = await GetMessageById(messageId);
-                if (messageResult is SuccessDataResult<MessageModel> successResult)
-                {
-                    var message = successResult.Data;
-                    message.ReadStatus = isRead;
-                    return await UpdateMessage(message);
-                }
-                return new ErrorResult("Failed to fetch the message.");
-            }
-            catch (MongoException ex)
-            {
-                _logger.LogError(ex, "An error occurred while updating the read status of the message with ID {MessageId}.", messageId);
-                return new ErrorResult("An error occurred while updating the message's read status.", ErrorType.ServerError);
-            }
-        }
-
         public async Task<ResultModel> UpdateMessage(MessageModel message)
         {
             try

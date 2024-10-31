@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
+using RealTimeChatApp.API.Data.UnitOfWork;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
@@ -30,13 +31,13 @@ namespace RealTimeChatApp.API.Controllers
             _userManager = userManager;
         }
         // delegate functions for authentication
-        private async Task<IActionResult> CheckUserRoleAndProceed(ObjectId groupId, Func<Task<IActionResult>> action)
+        private async Task<IActionResult> CheckUserRoleAndProceed(ObjectId groupChatId, Func<Task<IActionResult>> action)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
-            var userRoleResult = await _groupRepository.CheckUserRoleInGroup(userIdClaim.Value, groupId);
+            var userRoleResult = await _groupRepository.CheckUserRoleInGroupChat(userIdClaim.Value, groupChatId);
             if (userRoleResult is SuccessDataResult<(bool, bool)> roleCheck)
             {
                 var (isAdmin, isMember) = roleCheck.Data;
@@ -48,13 +49,13 @@ namespace RealTimeChatApp.API.Controllers
             else return BadRequest(userRoleResult);
         }
 
-        private async Task<IActionResult> CheckAdminAndProceed(ObjectId groupId, Func<Task<IActionResult>> action)
+        private async Task<IActionResult> CheckAdminAndProceed(ObjectId groupChatId, Func<Task<IActionResult>> action)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
-            var userRoleResult = await _groupRepository.CheckUserRoleInGroup(userIdClaim.Value, groupId);
+            var userRoleResult = await _groupRepository.CheckUserRoleInGroupChat(userIdClaim.Value, groupChatId);
             if (userRoleResult is SuccessDataResult<(bool isAdmin, bool isMember)> roleCheck)
             {
                 if (roleCheck.Data.isAdmin)
@@ -65,23 +66,12 @@ namespace RealTimeChatApp.API.Controllers
             return BadRequest(userRoleResult);
         }
 
-        [HttpGet("{groupId}/details")]
-        public async Task<IActionResult> GetGroupDetails([FromRoute] string groupId)
-        {
-            if (!ObjectId.TryParse(groupId, out ObjectId objectId))
-                return BadRequest(new ErrorResult("Invalid groupId format."));
+       
 
-            return await CheckUserRoleAndProceed(objectId, async () =>
-            {
-                var detailsResult = await _groupRepository.GetGroupById(objectId);
-                return detailsResult.IsSuccess ? Ok(detailsResult) : BadRequest(detailsResult);
-            });
-        }
-
-        [HttpGet("{groupId}/members")]
-        public async Task<IActionResult> GetGroupMembersDetails([FromRoute] string groupId)
+        [HttpGet("members/{groupChatId}")]
+        public async Task<IActionResult> GetGroupMembersDetails([FromRoute] string groupChatId)
         {
-            if (!ObjectId.TryParse(groupId, out ObjectId objectId))
+            if (!ObjectId.TryParse(groupChatId, out ObjectId objectId))
                 return BadRequest(new ErrorResult("Invalid groupId format."));
 
             return await CheckUserRoleAndProceed(objectId, async () =>
@@ -106,26 +96,7 @@ namespace RealTimeChatApp.API.Controllers
             return BadRequest(groupIdsResult);  // get the error from the repository
         }
 
-        [HttpGet("group-member-fullnames")]
-        public async Task<IActionResult> GetGroupMembersFullnames([FromRoute] string groupId)
-        {
-            if (!ObjectId.TryParse(groupId, out ObjectId objectId))
-                return BadRequest(new ErrorResult("Invalid groupId format."));
-
-            return await CheckUserRoleAndProceed(objectId, async () =>
-            {
-                var memberIdsResult = await _groupRepository.GetGroupMemberIds(objectId);
-                if (memberIdsResult is SuccessDataResult<List<string>> memberIdsSuccess)
-                {
-                    var fullnamesResult = await _userRepository.GetUserFriendsFullnames(memberIdsSuccess.Data);
-                    if (fullnamesResult is SuccessDataResult<Dictionary<string, string>> success)
-                        return Ok(success.Data);
-                    else
-                        return BadRequest(fullnamesResult);
-                }
-                else return BadRequest(memberIdsResult);
-            });
-        }
+        
 
         [HttpPost("new-group")]
         public async Task<IActionResult> CreateNewGroup([FromBody] AddGroupRequest request)
@@ -137,24 +108,20 @@ namespace RealTimeChatApp.API.Controllers
             if (userIdClaim == null)
                 return Unauthorized(new ErrorResult("User not authenticated."));
 
-            var user = await _userManager.FindByIdAsync(userIdClaim.Value);
-            if (user == null)
-                return Unauthorized(new ErrorResult("User not found."));
-
-            request.MemberIds.Add(user.Id);
-
-            var newGroupResult = await _groupRepository.CreateNewGroup(user.Id, request);
-            if (newGroupResult is not SuccessDataResult<ObjectId> success)
+            request.MemberIds.Add(userIdClaim.Value);
+            var newGroupResult = await _groupRepository.CreateNewGroup(userIdClaim.Value, request);
+            if (newGroupResult is not SuccessDataResult<ObjectId> groupId)
                 return BadRequest(newGroupResult);
 
             var membershipTasks = request.MemberIds.Select(memberId =>
-                _userRepository.AddUserGroupById(memberId, success.Data));
-            
-            var memberShipResults= await Task.WhenAll(membershipTasks);
+                _userRepository.AddUserGroupById(memberId, groupId.Data));
+
+            var memberShipResults = await Task.WhenAll(membershipTasks);
 
             if (memberShipResults.All(result => result.IsSuccess))
-                return Ok(new SuccessResult("Group successfully created."));
-            return BadRequest(new ErrorResult("Failed to create group."));
+                return Ok(new SuccessDataResult<string>("Group successfully created.", groupId.Data.ToString()));
+            else
+                return BadRequest(new ErrorResult("Failed to create group."));
         }
 
         [HttpPost("add-member")]

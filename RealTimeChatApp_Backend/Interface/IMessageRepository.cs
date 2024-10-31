@@ -9,7 +9,6 @@ namespace RealTimeChatApp.API.Interface
         Task<ResultModel> GetMessageById(ObjectId messageId);
         Task<ResultModel> GetMessagesByIds(List<ObjectId> messageIds);
         Task<ResultModel> SaveNewMessage(MessageModel message);
-        Task<ResultModel> UpdateReadStatusOfMessage(ObjectId messageId, bool isRead);
         Task<ResultModel> UpdateMessage(MessageModel message);
     }
 }

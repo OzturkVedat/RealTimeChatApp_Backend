@@ -20,17 +20,14 @@ namespace RealTimeChatApp.API.Repository
         public GroupRepository(IMongoDatabase mongoDb, ILogger<GroupRepository> logger)
         {
             _groupCollection = mongoDb.GetCollection<GroupModel>("groups");
-            _userCollection = mongoDb.GetCollection<UserModel>("user");
+            _userCollection = mongoDb.GetCollection<UserModel>("users");
             _logger = logger;
         }
-        public async Task<ResultModel> CheckUserRoleInGroup(string userId, ObjectId groupId)
+        public async Task<ResultModel> CheckUserRoleInGroupChat(string userId, ObjectId chatId)
         {
             try
             {
-                var projection = Builders<GroupModel>.Projection.Include(g => g.AdminId)
-                                                           .Include(g => g.GroupChat.ParticipantIds);
-                var group = await _groupCollection.Find(g => g.Id == groupId)
-                                                   .Project<GroupModel>(projection)
+                var group = await _groupCollection.Find(g => g.GroupChat.Id == chatId)
                                                    .FirstOrDefaultAsync();
                 if (group == null)
                     return new ErrorResult("Group not found.");
@@ -64,55 +61,59 @@ namespace RealTimeChatApp.API.Repository
         }
         public async Task<ResultModel> GetGroupDetails(List<ObjectId> groupIds)
         {
+            var groupDetailsList = new List<GroupDetailsResponse>();
+            if (groupIds == null || groupIds.Count == 0)
+                return new SuccessDataResult<List<GroupDetailsResponse>>("No group is requested.", groupDetailsList);
             try
             {
-                var groupDetailsList = new List<GroupDetailsResponse>();
-                if (groupIds == null || groupIds.Count == 0)
-                    return new SuccessDataResult<List<GroupDetailsResponse>>("No group is requested.", groupDetailsList);
-
-                var errorList = new List<ErrorResult>();
-                foreach (var groupId in groupIds)
+                var groupDetailsResponses = await Task.WhenAll(groupIds.Select(async groupId =>
                 {
                     var groupResult = await GetGroupById(groupId);
                     if (groupResult is SuccessDataResult<GroupModel> group)
                     {
-                        var groupDetails = new GroupDetailsResponse
+                        var gData = group.Data;
+                        return new GroupDetailsResponse
                         {
-                            GroupId = group.Data.Id.ToString(),
-                            GroupName = group.Data.GroupName,
-                            Description = group.Data.Description,
-                            LastMessageContent = group.Data.GroupChat.LastMessageContent,
-                            LastMessageSender = group.Data.GroupChat.LastMessageSenderFullname
+                            GroupId = gData.Id.ToString(),
+                            GroupName = gData.GroupName,
+                            Description = gData.Description,
+                            GroupChatId = gData.GroupChat.Id.ToString(),
+                            LastMessageContent = gData.GroupChat.LastMessageContent,
+                            LastMessageSender = gData.GroupChat.LastMessageSenderFullname
                         };
-                        groupDetailsList.Add(groupDetails);
                     }
-                    else
-                        errorList.Add((ErrorResult)groupResult);
-                }
-                if (errorList.Count != 0)
-                    return new ErrorResult("Failed to fetch the group details.");
-
+                    return null;
+                }));
+                groupDetailsList = groupDetailsResponses.Where(g => g != null).ToList();    // filter out the nulls
                 return new SuccessDataResult<List<GroupDetailsResponse>>("Successfully fetched the groups' details.", groupDetailsList);
-
             }
-            catch (MongoException ex)
+            catch (MongoException mongoEx)
             {
-                _logger.LogError(ex, "An error occurred while fetching the requested groups' details.");
-                return new ErrorResult("An error occurred while fetching the requested groups' details.");
+                _logger.LogError(mongoEx, "A MongoDB error occurred while fetching the requested groups' details.");
+                return new ErrorResult("A database error occurred while fetching the requested groups' details.");
+            }
+            catch (AggregateException aggEx)
+            {
+                foreach (var ex in aggEx.InnerExceptions)
+                {
+                    _logger.LogError(ex, "An error occurred in one of the tasks while fetching the requested groups' details.");
+                }
+                return new ErrorResult("One or more errors occurred while fetching the requested groups' details.");
             }
         }
 
-        public async Task<ResultModel> GetGroupMemberIds(ObjectId groupId)
+        public async Task<ResultModel> GetGroupMemberIds(ObjectId groupChatId)
         {
             try
             {
-                var group = await _groupCollection.Find(g => g.Id == groupId)
-                    .Project(g => new { g.GroupChat.ParticipantIds })
+                var memberIds = await _groupCollection.Find(g => g.GroupChat.Id == groupChatId)
+                    .Project(g => g.GroupChat.ParticipantIds)
                     .FirstOrDefaultAsync();
 
-                return group != null
-                    ? new SuccessDataResult<List<string>>("Fetched the member IDs of group.", group.ParticipantIds)
-                    : new ErrorResult("Group not found");
+                if (memberIds == null || memberIds.Count == 0)
+                    return new ErrorResult("Group not found or has no members.");
+                
+                return new SuccessDataResult<List<string>>("Fetched the member IDs of group.", memberIds);
             }
             catch (MongoException ex)
             {
@@ -121,33 +122,30 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> GetGroupMemberDetails(ObjectId groupId)
+        public async Task<ResultModel> GetGroupMemberDetails(ObjectId groupChatId)
         {
             try
             {
-                var memberIdsResult = await GetGroupMemberIds(groupId);
+                var memberIdsResult = await GetGroupMemberIds(groupChatId);
                 if (memberIdsResult is SuccessDataResult<List<string>> memberIds)
                 {
-                    var memberDetailsList = new List<MemberDetailsResponse>();
+                    var members = await _userCollection
+                        .Find(m => memberIds.Data.Contains(m.Id))
+                        .ToListAsync();
 
-                    foreach (var memberId in memberIds.Data)
+                    var memberDetailsList = members.Select(member => new MemberDetailsResponse
                     {
-                        var member = await _userCollection.Find(m => m.Id == memberId).FirstOrDefaultAsync();
-                        if (member != null)
-                        {
-                            var memberResponse = new MemberDetailsResponse
-                            {
-                                MemberId = member.Id,
-                                Fullname = member.FullName,
-                                StatusMessage = member.StatusMessage,
-                                IsOnline = member.IsOnline
-                            };
-                            memberDetailsList.Add(memberResponse);
-                        }
-                    }
+                        MemberId = member.Id,
+                        Fullname = member.FullName,
+                        StatusMessage = member.StatusMessage,
+                        MemberPictureUrl = member.ProfilePictureUrl,
+                        IsOnline = member.IsOnline
+                    }).ToList();
                     return new SuccessDataResult<List<MemberDetailsResponse>>("Group member details fetched successfully", memberDetailsList);
                 }
-                else return new ErrorResult("Failed to fetch member details of group");
+                else
+                    return new ErrorResult("Failed to fetch member details of group");
+                
             }
             catch (MongoException ex)
             {
@@ -156,16 +154,19 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> GetGroupChat(ObjectId groupId)
+
+        public async Task<ResultModel> GetGroupChat(ObjectId chatId)
         {
             try
             {
-                var group = await _groupCollection.Find(g => g.Id == groupId)
-                    .Project(g => new { g.GroupChat })
+                var projection = Builders<GroupModel>.Projection.Expression(g => g.GroupChat);
+
+                var groupChat = await _groupCollection.Find(g => g.GroupChat.Id == chatId)
+                    .Project<ChatModel>(projection)
                     .FirstOrDefaultAsync();
 
-                return group != null
-                    ? new SuccessDataResult<ChatModel>("Fetched the group chat successfully.", group.GroupChat)
+                return groupChat != null
+                    ? new SuccessDataResult<ChatModel>("Fetched the group chat successfully.", groupChat)
                     : new ErrorResult("Error while fetching the chat for given ID.");
             }
             catch (MongoException ex)
@@ -200,12 +201,12 @@ namespace RealTimeChatApp.API.Repository
         {
             try
             {
-                var group = await _groupCollection.Find(g => g.Id == groupId)
-                    .Project(g => new { g.GroupChat.MessageIds })
+                var messageIds = await _groupCollection.Find(g => g.Id == groupId)
+                    .Project(g => g.GroupChat.MessageIds)
                     .FirstOrDefaultAsync();
 
-                return group != null
-                    ? new SuccessDataResult<List<ObjectId>>("Fetched the group message IDs successfully.", group.MessageIds)
+                return messageIds != null
+                    ? new SuccessDataResult<List<ObjectId>>("Fetched the group message IDs successfully.", messageIds)
                     : new ErrorResult("Error while fetching the messages for given ID.");
             }
             catch (MongoException ex)
@@ -261,22 +262,22 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> SaveMessageToGroupChat(ObjectId groupId, MessageModel newMessage)
+        public async Task<ResultModel> SaveMessageToGroupChat(ObjectId groupChatId, MessageModel newMessage)
         {
             try
             {
-                var group = await _groupCollection
-                    .Find(g => g.Id == groupId)
-                    .Project(g => new { g.GroupChat.MessageIds })
+                var messageIds = await _groupCollection
+                    .Find(g => g.GroupChat.Id == groupChatId)
+                    .Project(g => g.GroupChat.MessageIds)
                     .FirstOrDefaultAsync();
 
-                if (group == null)
-                    return new ErrorResult("Group not found.");
+                if (messageIds == null)
+                    return new ErrorResult("No messages found.");
 
-                if (group.MessageIds.Contains(newMessage.Id))
+                if (messageIds.Contains(newMessage.Id))
                     return new ErrorResult("This message is already saved in group chat.");
 
-                var filter = Builders<GroupModel>.Filter.Eq(g => g.Id, groupId);
+                var filter = Builders<GroupModel>.Filter.Eq(g => g.GroupChat.Id, groupChatId);
                 var update = Builders<GroupModel>.Update.AddToSet(g => g.GroupChat.MessageIds, newMessage.Id)
                                                         .Set(g => g.GroupChat.LastMessageSenderFullname, newMessage.SenderFullname)
                                                         .Set(g => g.GroupChat.LastMessageContent, newMessage.Content);

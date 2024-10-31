@@ -12,6 +12,7 @@ namespace RealTimeChatApp.API.DTOs.ResultModels
             Message = message;
         }
     }
+
     public class ErrorDataResult : ResultModel
     {
         public IEnumerable<string> Errors { get; set; }

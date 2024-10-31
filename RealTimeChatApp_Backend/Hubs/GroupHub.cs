@@ -33,90 +33,24 @@ namespace RealTimeChatApp.API.Hubs
         public override async Task OnConnectedAsync()
         {
             var userId = Context.UserIdentifier;
-            _logger.LogInformation($"User {userId} connected.");
-
             if (userId == null)
             {
                 _logger.LogWarning("User not authenticated.");
                 await SendErrorToCaller("User not authenticated.");
                 return;
             }
-
-            // Log fetching group IDs for the user
-            var userGroupIds = await _userRepository.GetUserIdsByType(userId, "groupIds");
-            if (userGroupIds is SuccessDataResult<List<ObjectId>> groupIds)
-            {
-                _logger.LogInformation($"Fetched {groupIds.Data.Count} group IDs for user {userId}.");
-
-                // Log fetching chat room IDs for the user's groups
-                var userGroupChatIds = await _groupRepository.GetGroupsChatIds(groupIds.Data);
-                if (userGroupChatIds is SuccessDataResult<List<ObjectId>> chatIds)
-                {
-                    _logger.LogInformation($"Fetched {chatIds.Data.Count} chat room IDs for user {userId}.");
-
-                    // Attempt to join all chat rooms
-                    var tasks = chatIds.Data.Select(chatId => JoinChatRoom(chatId.ToString())).ToArray();
-                    await Task.WhenAll(tasks);
-
-                    _logger.LogInformation($"User {userId} joined {chatIds.Data.Count} chat rooms.");
-                }
-                else
-                {
-                    _logger.LogError($"Error while connecting chat rooms for user {userId}.");
-                    await SendErrorToCaller("Error while connecting chat rooms.");
-                }
-            }
-            else
-            {
-                _logger.LogError($"Error while retrieving group IDs for user {userId}.");
-                await SendErrorToCaller("Error while connecting chat rooms.");
-            }
-
             await base.OnConnectedAsync();
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
             var userId = Context.UserIdentifier;
-            _logger.LogInformation($"User {userId} disconnected. Reason: {exception?.Message}");
-
             if (userId == null)
             {
                 _logger.LogWarning("User not authenticated.");
                 await SendErrorToCaller("User not authenticated.");
                 return;
             }
-
-            // Log fetching group IDs for the user
-            var userGroupIds = await _userRepository.GetUserIdsByType(userId, "groupIds");
-            if (userGroupIds is SuccessDataResult<List<ObjectId>> groupIds)
-            {
-                _logger.LogInformation($"Fetched {groupIds.Data.Count} group IDs for user {userId}.");
-
-                // Log fetching chat room IDs for the user's groups
-                var userGroupChatIds = await _groupRepository.GetGroupsChatIds(groupIds.Data);
-                if (userGroupChatIds is SuccessDataResult<List<ObjectId>> chatIds)
-                {
-                    _logger.LogInformation($"Fetched {chatIds.Data.Count} chat room IDs for user {userId}.");
-
-                    // Attempt to leave all chat rooms
-                    var tasks = chatIds.Data.Select(chatId => LeaveChatRoom(chatId.ToString())).ToArray();
-                    await Task.WhenAll(tasks);
-
-                    _logger.LogInformation($"User {userId} left {chatIds.Data.Count} chat rooms.");
-                }
-                else
-                {
-                    _logger.LogError($"Error while disconnecting chat rooms for user {userId}.");
-                    await SendErrorToCaller("Error while disconnecting.");
-                }
-            }
-            else
-            {
-                _logger.LogError($"Error while retrieving group IDs for user {userId}.");
-                await SendErrorToCaller("Error while disconnecting chat rooms.");
-            }
-
             await base.OnDisconnectedAsync(exception);
         }
         public async Task JoinChatRoom(string chatId)
@@ -162,9 +96,8 @@ namespace RealTimeChatApp.API.Hubs
                     await SendErrorToCaller("Failed to retrieve messages.");
                 }
             }
-                
-        }
 
+        }
         public async Task SendGroupMessage(string chatId, string message)
         {
             if (string.IsNullOrWhiteSpace(message))
@@ -178,27 +111,26 @@ namespace RealTimeChatApp.API.Hubs
                 await SendErrorToCaller("Invalid chat ID format");
                 return;
             }
+
             if (await CheckUserRoleAndProceed(objectId))
             {
                 var groupChatResult = await _groupRepository.GetGroupChat(objectId);
-                if (groupChatResult is SuccessDataResult<GroupModel> success)
+                if (groupChatResult is SuccessDataResult<ChatModel> success)
                 {
                     var userId = Context.UserIdentifier;
-                    if (!success.Data.GroupChat.ParticipantIds.Contains(userId))
+                    if (!success.Data.ParticipantIds.Contains(userId))
                         await SendErrorToCaller("You are not a participant in this chat.");
+
                     var user = await _userManager.FindByIdAsync(userId);
-                    var newMessage = new MessageModel(userId, user.FullName, success.Data.GroupChat.ParticipantIds, message);
+                    var newMessage = new MessageModel(userId, user.FullName, message);
                     var saveResult = await _messageRepository.SaveNewMessage(newMessage);
                     if (saveResult.IsSuccess)
                     {
                         var addResult = await _groupRepository.SaveMessageToGroupChat(objectId, newMessage);
                         if (addResult.IsSuccess)
                         {
-                            var messageResult = await _messageRepository.GetMessageById(newMessage.Id);
-                            if (messageResult is SuccessDataResult<MessageModel> messageSuccess)
-                                await Clients.Group(chatId).SendAsync("ReceiveMessage", messageSuccess.Data);
-                            else
-                                await SendErrorToCaller("Failed to fetch the message details.");
+                            await Clients.Group(chatId).SendAsync("ReceiveGroupMessage", newMessage);
+                            return;
                         }
                         else
                             await SendErrorToCaller("Error while saving the message to chat.");
@@ -209,7 +141,7 @@ namespace RealTimeChatApp.API.Hubs
                 else
                     await SendErrorToCaller("Error while fething group chat.");
             }
-                
+
         }
 
         public async Task SendGroupTypingNotification(string groupChatId)
@@ -230,16 +162,14 @@ namespace RealTimeChatApp.API.Hubs
                 else
                     await SendErrorToCaller("Error while sending typing notification.");
             }
-                
-
         }
         private async Task SendErrorToCaller(string errorMessage)
         {
-            await Clients.Caller.SendAsync("ReceiveErrorMessage", errorMessage);
+            await Clients.Caller.SendAsync("ReceiveGroupErrorMessage", errorMessage);
             return;
         }
 
-        private async Task<bool> CheckUserRoleAndProceed(ObjectId groupId)
+        private async Task<bool> CheckUserRoleAndProceed(ObjectId chatId)
         {
             var userId = Context.UserIdentifier;
             if (userId == null)
@@ -247,7 +177,7 @@ namespace RealTimeChatApp.API.Hubs
                 await SendErrorToCaller("User not authenticated.");
                 return false;
             }
-            var userRoleResult = await _groupRepository.CheckUserRoleInGroup(userId, groupId);
+            var userRoleResult = await _groupRepository.CheckUserRoleInGroupChat(userId, chatId);
             if (userRoleResult is SuccessDataResult<(bool, bool)> roleCheck)
             {
                 var (isAdmin, isMember) = roleCheck.Data;

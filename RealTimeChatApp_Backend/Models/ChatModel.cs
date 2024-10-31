@@ -7,7 +7,7 @@ namespace RealTimeChatApp.API.Models
     [CollectionName("chats")]
     public class ChatModel
     {
-        public ObjectId Id { get; set; }
+        public ObjectId Id { get; set; }= ObjectId.GenerateNewId();
         public List<string> ParticipantIds { get; set; }
         public string LastMessageContent { get; set; } = "No messages sent yet.";
         public string LastMessageSenderFullname {  get; set; }= string.Empty;

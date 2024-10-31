@@ -48,6 +48,7 @@ namespace RealTimeChatApp.API.Controllers
                 UserName = request.Email,
                 StatusMessage = "Hello there!",
                 IsOnline = false,
+                ProfilePictureUrl = GetRandomProfilePictureUrl()
             };
             var result = await _userManager.CreateAsync(newUser, request.Password);
             if (!result.Succeeded)
@@ -92,12 +93,11 @@ namespace RealTimeChatApp.API.Controllers
                     AccessToken = jwtResult.Data,
                     RefreshToken = refreshTokenResult.Data
                 };
-                await _userRepository.UpdateUserStatus(user.Id, true);  // turn online
                 return Ok(new SuccessDataResult<LoginResponse>("Successfully logged in.", response));
             }
             return BadRequest(new ErrorResult("Error while trying to log in the user."));
-
         }
+
         [HttpPost("refresh-token")]
         public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
         {
@@ -147,5 +147,25 @@ namespace RealTimeChatApp.API.Controllers
                 return BadRequest(new ErrorResult("Error while logging out."));
         }
 
+        private string GetRandomProfilePictureUrl()
+        {
+            string[] profilePics =
+            [
+             "example_pic_000.jpg",
+             "example_pic_001.jpg",
+             "example_pic_002.jpg",
+             "example_pic_003.jpg",
+             "example_pic_004.jpg",
+             "example_pic_005.jpg",
+             "example_pic_006.jpg",
+             "example_pic_007.jpg",
+             "example_pic_008.jpg",
+             "example_pic_009.jpg"
+            ];
+
+            Random random = new Random();
+            int index = random.Next(profilePics.Length);
+            return $"https://localhost:3000/{profilePics[index]}";
+        }
     }
 }

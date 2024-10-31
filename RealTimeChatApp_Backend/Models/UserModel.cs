@@ -10,7 +10,8 @@ namespace RealTimeChatApp.API.Models
     public class UserModel : MongoIdentityUser<string>
     {
         public string FullName { get; set; }
-        public string? StatusMessage { get; set; }
+        public string StatusMessage { get; set; }
+        public string ProfilePictureUrl {  get; set; }
         public List<ObjectId> ChatIds { get; set; } = [];
         public List<ObjectId> GroupIds { get; set; } = [];
         public List<string> FriendsListIds { get; set; } = [];

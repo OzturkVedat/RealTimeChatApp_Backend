@@ -3,17 +3,22 @@ using MongoDB.Driver;
 using RealTimeChatApp.API.DTOs.ResultModels;
 using RealTimeChatApp.API.Interface;
 using RealTimeChatApp.API.Models;
+using RealTimeChatApp.API.ViewModels.RequestModels;
+using RealTimeChatApp.API.ViewModels.ResultModels;
+using System.Xml.Linq;
 
 namespace RealTimeChatApp.API.Repository
 {
     public class UserRepository : IUserRepository
     {
         private readonly IMongoCollection<UserModel> _usersCollection;
+        private readonly IMongoCollection<Superadmin> _superadminCollection;
         private readonly ILogger<UserRepository> _logger;
 
         public UserRepository(IMongoDatabase mongoDb, ILogger<UserRepository> logger)
         {
             _usersCollection = mongoDb.GetCollection<UserModel>("users");
+            _superadminCollection = mongoDb.GetCollection<Superadmin>("superadmins");
             _logger = logger;
         }
 
@@ -31,6 +36,52 @@ namespace RealTimeChatApp.API.Repository
                 _logger.LogError(ex, "An error occurred while retrieving the user");
                 return new ErrorResult("An error occurred while retrieving the user.", ErrorType.ServerError);
             }
+        }
+        public async Task<ResultModel> GetAuthenticatedUserDetails(string userId)
+        {
+            try
+            {
+                var projection = Builders<UserModel>.Projection
+                    .Include(u => u.Id)
+                    .Include(u => u.FullName)
+                    .Include(u => u.Email)
+                    .Include(u => u.ProfilePictureUrl)
+                    .Include(u => u.IsOnline);
+
+                var user = await _usersCollection
+                    .Find(x => x.Id == userId)
+                    .Project<UserModel>(projection)
+                    .FirstOrDefaultAsync();
+
+                if (user == null)
+                    return new ErrorResult("User not found.", ErrorType.NotFound);
+
+                var details = new UserDetailsResponse
+                {
+                    Id = user.Id,
+                    Fullname = user.FullName,
+                    Email = user.Email,
+                    ProfilePicUrl = user.ProfilePictureUrl,
+                    IsOnline = user.IsOnline
+                };
+                return new SuccessDataResult<UserDetailsResponse>("Successfully fetched the user details.", details);
+            }
+            catch (MongoException ex)
+            {
+                _logger.LogError(ex, "An error occurred while retrieving the user");
+                return new ErrorResult("An error occurred while retrieving the user.", ErrorType.ServerError);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An unexpected error occurred while retrieving the user");
+                return new ErrorResult("An unexpected error occurred while retrieving the user.", ErrorType.ServerError);
+            }
+        }
+
+        public async Task<ResultModel> GetSuperadminById(string userId)
+        {
+            var super = await _superadminCollection.Find(s => s.UserId == userId).FirstOrDefaultAsync();
+            return super != null ? new SuccessDataResult<Superadmin>("Successfull.", super) : new ErrorResult("Not found.");
         }
 
         public async Task<ResultModel> GetUserIdsByType(string userId, string idType)
@@ -56,63 +107,89 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> GetUserFriendsFullnames(List<string> friendIds)
+        public async Task<ResultModel> GetUserFriendsDetails(List<string> friendIds)
         {
             try
             {
                 var filter = Builders<UserModel>.Filter.In(u => u.Id, friendIds);
-                var projection = Builders<UserModel>.Projection.Include(u => u.FullName);
-                var users = await _usersCollection.Find(filter).Project<UserModel>(projection).ToListAsync();
+                var projection = Builders<UserModel>.Projection
+                    .Include(u => u.Id)
+                    .Include(u => u.FullName)
+                    .Include(u => u.ProfilePictureUrl)
+                    .Include(u => u.StatusMessage)
+                    .Include(u => u.IsOnline);
 
-                var userDetails = users.ToDictionary(user => user.Id, user => user.FullName);
-                return new SuccessDataResult<Dictionary<string, string>>("User Fullnames retrieved successfully.", userDetails);
+                var friendDetails = await _usersCollection
+                    .Find(filter)
+                    .Project(u => new FriendDetailsResponse     // project directly
+                    {
+                        Id = u.Id,
+                        Fullname = u.FullName,
+                        PictureUrl = u.ProfilePictureUrl,
+                        StatusMessage = u.StatusMessage,
+                        IsOnline = u.IsOnline
+                    })
+                    .ToListAsync();
+                return new SuccessDataResult<List<FriendDetailsResponse>>("User friend details retrieved successfully.", friendDetails);
             }
             catch (MongoException ex)
             {
-                _logger.LogError(ex, "An error occurred while fetching user friend fullnames.");
-                return new ErrorResult("An error occurred while fetching user friend fullnames.", ErrorType.ServerError);
+                _logger.LogError(ex, "An error occurred while fetching user friend details.");
+                return new ErrorResult("An error occurred while fetching user friend details.", ErrorType.ServerError);
             }
         }
 
-        public async Task<ResultModel> GetUserFriendsOnlineStatus(List<string> friendIds)
+
+
+
+        public async Task<ResultModel> SearchFriendsByFullname(string fullname)
         {
             try
             {
-                var filter = Builders<UserModel>.Filter.In(u => u.Id, friendIds);
-                var projection = Builders<UserModel>.Projection.Include(u => u.IsOnline);
-                var users = await _usersCollection.Find(filter).Project<UserModel>(projection).ToListAsync();
+                var filter = Builders<UserModel>.Filter.Regex(u => u.FullName, new MongoDB.Bson.BsonRegularExpression(fullname, "i")); // 'i' for case-insensitive
+                var results = await _usersCollection.Find(filter)
+                                         .Limit(20)
+                                         .ToListAsync();
 
-                var userDetails = users.ToDictionary(user => user.Id, user => user.IsOnline);
-                return new SuccessDataResult<Dictionary<string, bool>>("User Online Status retrieved successfully.", userDetails);
-            }
-            catch (MongoException ex)
-            {
-                _logger.LogError(ex, "An error occurred while fetching user friend online statuses.");
-                return new ErrorResult("An error occurred while fetching user friend online statuses.", ErrorType.ServerError);
-            }
-        }
-
-        public async Task<ResultModel> AddUserFriendByEmail(string userId, string email)
-        {
-            try
-            {
-                var friendUser = await _usersCollection.Find(u => u.Email == email).FirstOrDefaultAsync();
-                if (friendUser == null)
+                var searchResults = results.Select(user => new SearchDetailsResponse
                 {
-                    return new ErrorResult("User not found for the given email.", ErrorType.NotFound);
-                }
+                    UserId = user.Id,
+                    Fullname = user.FullName,
+                    UserPictureUrl = user.ProfilePictureUrl
+                }).ToList();
+
+                return results != null ?
+                    new SuccessDataResult<List<SearchDetailsResponse>>("Successfully fetched the search results.", searchResults) :
+                    new ErrorResult("No user found.");
+            }
+            catch (MongoException ex)
+            {
+                _logger.LogError(ex, "An error occurred while fetching user names.");
+                return new ErrorResult("An error occurred while fetching user names.", ErrorType.ServerError);
+            }
+        }
+        public async Task<ResultModel> AddUserFriendById(string userId, string newFriendId)
+        {
+            try
+            {
+                var filter = Builders<UserModel>.Filter.Eq(u => u.Id, newFriendId);
+                var friendExists = await _usersCollection.Find(filter).Limit(1).AnyAsync();
+                if (!friendExists)
+                    return new ErrorResult("User not found for the given ID.", ErrorType.NotFound);
 
                 var currentUserResult = await GetUserById(userId);
                 if (!currentUserResult.IsSuccess) return currentUserResult; // return the error from GetUserById
 
                 var currentUser = ((SuccessDataResult<UserModel>)currentUserResult).Data;
-                if (!currentUser.FriendsListIds.Contains(friendUser.Id))
+                if (!currentUser.FriendsListIds.Contains(newFriendId))
                 {
-                    await _usersCollection.UpdateOneAsync(u => u.Id == userId, Builders<UserModel>.Update.AddToSet(u => u.FriendsListIds, friendUser.Id));
-                    if (userId != friendUser.Id) // in case the user adds himself as a friend
-                        await _usersCollection.UpdateOneAsync(u => u.Id == friendUser.Id, Builders<UserModel>.Update.AddToSet(u => u.FriendsListIds, userId));
+                    await _usersCollection.UpdateOneAsync(u => u.Id == userId, Builders<UserModel>.Update
+                                    .AddToSet(u => u.FriendsListIds, newFriendId));
 
-                    return new SuccessDataResult<string>("Friend with the ID added:", friendUser.Id);
+                    if (userId != newFriendId) // in case the user adds himself as a friend
+                        await _usersCollection.UpdateOneAsync(u => u.Id == newFriendId, Builders<UserModel>.Update.AddToSet(u => u.FriendsListIds, userId));
+
+                    return new SuccessResult("Friend added.");
                 }
                 return new ErrorResult("User already has this friend on the friends list.", ErrorType.Conflict);
             }
@@ -149,7 +226,16 @@ namespace RealTimeChatApp.API.Repository
                 if (!userResult.IsSuccess) return userResult;
 
                 var user = ((SuccessDataResult<UserModel>)userResult).Data;
-                await _usersCollection.UpdateOneAsync(u => u.Id == userId, Builders<UserModel>.Update.AddToSet(u => u.GroupIds, groupId));
+
+                if (user.GroupIds.Contains(groupId))
+                    return new ErrorResult("User is already part of this group.");
+
+                await _usersCollection.UpdateOneAsync(
+                    u => u.Id == userId,
+                    Builders<UserModel>.Update.AddToSet(u => u.GroupIds, groupId)
+                );
+
+                _logger.LogInformation("Successfully added group ID {GroupId} to user {UserId}.", groupId, userId);
                 return new SuccessDataResult<ObjectId>("Group with the ID saved successfully.", groupId);
             }
             catch (MongoException ex)
@@ -159,21 +245,8 @@ namespace RealTimeChatApp.API.Repository
             }
         }
 
-        public async Task<ResultModel> UpdateUser(UserModel updatedModel)
-        {
-            try
-            {
-                var result = await _usersCollection.ReplaceOneAsync(m => m.Id == updatedModel.Id, updatedModel);
-                return result.IsAcknowledged && result.ModifiedCount > 0
-                    ? new SuccessResult("User updated successfully.")
-                    : new ErrorResult("Failed to update: User not found.");
-            }
-            catch (MongoException ex)
-            {
-                _logger.LogError(ex, "An error occurred while updating the user.");
-                return new ErrorResult("An error occurred while updating the user.", ErrorType.ServerError);
-            }
-        }
+
+
 
         public async Task<ResultModel> UpdateUserStatus(string userId, bool isOnline)
         {
