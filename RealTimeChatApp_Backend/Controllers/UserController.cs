@@ -54,6 +54,20 @@ namespace RealTimeChatApp.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("superadmin-check")]
+        public async Task<IActionResult> IsSuperadmin()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+                return Unauthorized(new ErrorResult("User not authenticated."));
+
+            var result = await _userRepository.GetSuperadminById(userIdClaim.Value);
+            if (result is ErrorResult)
+                return Ok(new SuccessDataResult<bool>("User is not a superadmin.", false));           
+
+            return Ok(new SuccessDataResult<bool>("User is a superadmin.", true));
+        }
+
         [HttpGet("user-private-chats")]
         public async Task<IActionResult> GetUserPrivateChatDetails()
         {

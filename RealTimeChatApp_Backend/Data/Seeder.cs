@@ -15,8 +15,6 @@ namespace RealTimeChatApp.API.Data
         private readonly IMongoCollection<UserModel> _userCollection;
         private readonly IMongoCollection<Superadmin> _superadminCollection;
         private readonly UserManager<UserModel> _userManager;
-
-
         public Seeder(IMongoDatabase mongoDb, UserManager<UserModel> userManager)
         {
             _userCollection = mongoDb.GetCollection<UserModel>("users");
@@ -68,6 +66,7 @@ namespace RealTimeChatApp.API.Data
                     {
                         UserId = user.Id,
                         UserName = user.FullName,
+                        BroadcastedIds= []
                     };
                     await _superadminCollection.InsertOneAsync(super);
                 }

@@ -71,11 +71,6 @@ namespace RealTimeChatApp.API.Repository
                 _logger.LogError(ex, "An error occurred while retrieving the user");
                 return new ErrorResult("An error occurred while retrieving the user.", ErrorType.ServerError);
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "An unexpected error occurred while retrieving the user");
-                return new ErrorResult("An unexpected error occurred while retrieving the user.", ErrorType.ServerError);
-            }
         }
 
         public async Task<ResultModel> GetSuperadminById(string userId)
@@ -83,6 +78,23 @@ namespace RealTimeChatApp.API.Repository
             var super = await _superadminCollection.Find(s => s.UserId == userId).FirstOrDefaultAsync();
             return super != null ? new SuccessDataResult<Superadmin>("Successfull.", super) : new ErrorResult("Not found.");
         }
+
+        public async Task<ResultModel> GetAllBroadcastedIds()
+        {
+            try
+            {
+                var superadmins = await _superadminCollection.Find(FilterDefinition<Superadmin>.Empty).ToListAsync();
+                var broadcastedIds = superadmins.SelectMany(s => s.BroadcastedIds).Distinct().ToList();
+
+                return new SuccessDataResult<List<ObjectId>>("Successfully fetched broadcasted IDs.", broadcastedIds);
+            }
+            catch (MongoException ex)
+            {
+                _logger.LogError(ex, "An error occurred while retrieving broadcasted IDs.");
+                return new ErrorResult("An error occurred while retrieving broadcasted IDs.", ErrorType.ServerError);
+            }
+        }
+      
 
         public async Task<ResultModel> GetUserIdsByType(string userId, string idType)
         {
@@ -140,8 +152,6 @@ namespace RealTimeChatApp.API.Repository
         }
 
 
-
-
         public async Task<ResultModel> SearchFriendsByFullname(string fullname)
         {
             try
@@ -168,6 +178,8 @@ namespace RealTimeChatApp.API.Repository
                 return new ErrorResult("An error occurred while fetching user names.", ErrorType.ServerError);
             }
         }
+
+        
         public async Task<ResultModel> AddUserFriendById(string userId, string newFriendId)
         {
             try
@@ -244,6 +256,35 @@ namespace RealTimeChatApp.API.Repository
                 return new ErrorResult("An error occurred while adding the group.", ErrorType.ServerError);
             }
         }
+
+        public async Task<ResultModel> AddSuperAdminMessageId(string superId, ObjectId messageId)
+        {
+            try
+            {
+                var superAdmin = await _superadminCollection.Find(s => s.UserId == superId).FirstOrDefaultAsync();
+                if (superAdmin == null)
+                    return new ErrorResult("Superadmin not found.", ErrorType.NotFound);
+                
+                if (!superAdmin.BroadcastedIds.Contains(messageId))
+                {
+                    superAdmin.BroadcastedIds.Add(messageId);
+                    var updateDefinition = Builders<Superadmin>.Update.Set(s => s.BroadcastedIds, superAdmin.BroadcastedIds);
+                    await _superadminCollection.UpdateOneAsync(s => s.UserId == superId, updateDefinition);
+
+                    return new SuccessResult("Message ID added to broadcast list.");
+                }
+                else
+                {
+                    return new ErrorResult("Message ID is already in the broadcasted list.", ErrorType.Conflict);
+                }
+            }
+            catch (MongoException ex)
+            {
+                _logger.LogError(ex, "An error occurred while adding the broadcast message ID.");
+                return new ErrorResult("An error occurred while adding the broadcast message ID.", ErrorType.ServerError);
+            }
+        }
+
 
 
 

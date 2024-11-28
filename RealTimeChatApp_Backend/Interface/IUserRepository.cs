@@ -12,12 +12,14 @@ namespace RealTimeChatApp.API.Interface
         Task<ResultModel> GetUserById(string id);
         Task<ResultModel> GetAuthenticatedUserDetails(string userId);
         Task<ResultModel> GetSuperadminById(string userId);
+        Task<ResultModel> GetAllBroadcastedIds();
         Task<ResultModel> GetUserIdsByType(string userId, string idType);
         Task<ResultModel> GetUserFriendsDetails(List<string> friendIds);
         Task<ResultModel> SearchFriendsByFullname(string fullname);
         Task<ResultModel> AddUserFriendById(string userId, string friendId);
         Task<ResultModel> AddUserPrivateChatById(string userId, ObjectId chatId);
         Task<ResultModel> AddUserGroupById(string userId, ObjectId groupId);
+        Task<ResultModel> AddSuperAdminMessageId(string superId, ObjectId messageId);
         Task<ResultModel> UpdateUserStatus(string userId, bool isOnline);
         Task<ResultModel> RemoveUserGroupById(string userId, ObjectId groupId);
     }

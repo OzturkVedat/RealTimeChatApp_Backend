@@ -105,6 +105,29 @@ namespace RealTimeChatApp.API.Hubs
                 await SendErrorToCaller("Failed to retrieve messages.");
             }
         }
+        public async Task GetPreviousBroadcasts()
+        {
+            var userId = Context.UserIdentifier;
+            if (userId == null)
+            {
+                await SendErrorToCaller("User not authenticated.");
+                return;
+            }
+            var broadcastedIdsResult = await _userRepository.GetAllBroadcastedIds();
+            if (broadcastedIdsResult is SuccessDataResult<List<ObjectId>> broadcastedIds)
+            {
+                var bMessagesResult = await _messageRepository.GetMessagesByIds(broadcastedIds.Data);
+                if (bMessagesResult is SuccessDataResult<List<MessageModel>> messages)
+                {
+                    await Clients.Caller.SendAsync("ReceivePreviousBroadcasts", messages.Data);
+                }
+                else
+                    await SendErrorToCaller("Error while fetching previous broadcasts.");
+            }
+            else
+                await SendErrorToCaller("Error while fetching broadcasted IDs.");
+        }
+
 
         public async Task SendMessage(string chatId, string message)    // for private chats
         {
@@ -175,9 +198,10 @@ namespace RealTimeChatApp.API.Hubs
             {
                 var newMessage = new MessageModel(userId, superadmin.Data.UserName, message);
                 var saveResult = await _messageRepository.SaveNewMessage(newMessage);
-                if (!saveResult.IsSuccess)
-                    await SendErrorToCaller("Failed to save the message.");
+                var addResult = await _userRepository.AddSuperAdminMessageId(userId, newMessage.Id);
 
+                if (!saveResult.IsSuccess || !addResult.IsSuccess)
+                    await SendErrorToCaller("Failed to save the message.");
                 await Clients.All.SendAsync("ReceiveBroadcast", newMessage);
             }
             else
