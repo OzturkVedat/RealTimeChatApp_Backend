@@ -45,13 +45,13 @@ namespace RealTimeChatApp.API.Services
         }
         public async Task<ResultModel> GenerateRefreshToken(string userId)
         {
-            var newToken = Guid.NewGuid().ToString(); // Generate a new refresh token
+            var newToken = new RefreshToken(); // Generate a new refresh token
             var filter = Builders<UserModel>.Filter.Eq(u => u.Id, userId);
-            var update = Builders<UserModel>.Update.Set(u => u.RefreshToken, new RefreshToken());
+            var update = Builders<UserModel>.Update.Set(u => u.RefreshToken, newToken);
 
             var result = await _usersCollection.UpdateOneAsync(filter, update);
             if (result.ModifiedCount > 0)
-                return new SuccessDataResult<string>("Successfully generated a new refresh token.", newToken);
+                return new SuccessDataResult<string>("Successfully generated a new refresh token.", newToken.Token);
 
             return new ErrorResult("Error while generating the refresh token.");
         }
@@ -63,7 +63,9 @@ namespace RealTimeChatApp.API.Services
                 Builders<UserModel>.Filter.Eq(u => u.RefreshToken.IsRevoked, false),
                 Builders<UserModel>.Filter.Gt(u => u.RefreshToken.ExpiryDate, DateTime.UtcNow)
             );
-            var user = await _usersCollection.Find(filter).FirstOrDefaultAsync();
+            var projection = Builders<UserModel>.Projection.Include(u => u.Id);
+            var user = await _usersCollection.Find(filter).Project<UserModel>(projection).FirstOrDefaultAsync();
+
             if (user != null)
                 return new SuccessDataResult<string>("Refresh token is validated for the user.", user.Id);
             

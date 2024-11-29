@@ -22,7 +22,7 @@ namespace RealTimeChatApp.API.Models
     public class RefreshToken
     {
         public string Token { get; set; } = Guid.NewGuid().ToString();
-        public DateTime ExpiryDate { get; set; } = DateTime.UtcNow;
+        public DateTime ExpiryDate { get; set; } = DateTime.UtcNow.AddDays(7);  // for one week use
         public bool IsRevoked { get; set; } = false;
     }
 }
