@@ -1,8 +1,8 @@
-# ChitChat_Backend
+# ChitChat Backend
 
 ## Overview
 
-This project is a real-time chat application back-end built with ASP.NET Core, using SignalR for real-time communication, MongoDB for data storage, JWT for secure authentication, and Docker for containerization.
+This project is a real-time chat application back-end built with ASP.NET Core, using SignalR for real-time communication, MongoDB container for data storage, and JWT for secure authentication.
 
 ## Features
 
